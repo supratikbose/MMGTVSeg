@@ -104,14 +104,14 @@ def splitPatientImageIntoSubFiles(
     successFlag = True     
     return successFlag, oneSliceExtraFlag
 
-def createSplitFiles(preprocConfigfilePath, outputJsonFilePath, verbose=False):
+def createSplitFiles(trainConfigfilePath,  verbose=False):
     #Read preprocessing patients
     successFlag = False
     patientList = []
     listPatientsWithExtraSlice = []
-    with open(preprocConfigfilePath) as f:
-        preproc_config = json.load(f)
-        f.close()
+    with open(trainConfigfilePath) as fp:
+        preproc_config = json.load(fp)
+        fp.close()
     #Get unique patient names from resampled directory
     resampledFilesLocation = preproc_config["resampledFilesLocation"]
     patientVol_width = preproc_config["patientVol_width"]
@@ -166,18 +166,19 @@ def createSplitFiles(preprocConfigfilePath, outputJsonFilePath, verbose=False):
             if not successFlag:
                 print('Failed in splitting ', baseFileName, ' Exiting.')
                 return successFlag, patientList, listPatientsWithExtraSlice
-    
-    patientInfoDict = dict()
+    #patientInfoDict is a superset of preproc_config to which new keys are added
+    patientInfoDict = preproc_config #dict()
     patientInfoDict['patientList'] = patientList
     patientInfoDict['suffixList']  = suffixList 
     patientInfoDict['listPatientsWithExtraSlice'] = listPatientsWithExtraSlice
     numDepthSplits =   patientVol_Depth //  sampleInput_Depth
-    patientInfoDict['suffixList'] = ['{:>03d}'.format(k) for k in range(numDepthSplits)]
-    with open(outputJsonFilePath, 'w') as fp:
+    patientInfoDict['prefixList'] = ['{:>03d}'.format(k) for k in range(numDepthSplits)]
+    with open(trainConfigfilePath, 'w') as fp:
         json.dump(patientInfoDict, fp, indent=4)
+        fp.close()
     print('createSplitFiles Finshed.')
     return successFlag, patientList, listPatientsWithExtraSlice
             
     
 successFlag, patientList, listPatientsWithExtraSlice = \
-    createSplitFiles('input/preprocInput_DSSENet.json', 'input/patientInfoDict_DSSENet.json', verbose=False)   
+    createSplitFiles('input/trainInput_DSSENet.json',  verbose=False)   
