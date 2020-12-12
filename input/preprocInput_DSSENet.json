@@ -1,8 +1,0 @@
-{
-    "resampledFilesLocation" : "data/hecktor_train/resampled",    
-    "patientVol_width": 144,
-    "patientVol_Height": 144,
-    "patientVol_Depth": 144,
-    "sampleInput_Depth": 6,
-    "splitFilesLocation" : "data/hecktor_train/split"
-}
