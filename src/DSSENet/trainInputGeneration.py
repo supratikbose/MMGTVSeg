@@ -104,12 +104,12 @@ def splitPatientImageIntoSubFiles(
     successFlag = True     
     return successFlag, oneSliceExtraFlag
 
-def createSplitFiles(trainConfigfilePath,  verbose=False):
+def createSplitFiles(trainConfigFilePath,  verbose=False):
     #Read preprocessing patients
     successFlag = False
     patientList = []
     listPatientsWithExtraSlice = []
-    with open(trainConfigfilePath) as fp:
+    with open(trainConfigFilePath) as fp:
         preproc_config = json.load(fp)
         fp.close()
     #Get unique patient names from resampled directory
@@ -122,7 +122,9 @@ def createSplitFiles(trainConfigfilePath,  verbose=False):
     #Randomize patient list : First we got file list, then dropped
     # the '_ct.nii.gz' to get patient name and then shuffled it
     patientList = [(os.path.basename(f)).replace('_ct.nii.gz','') \
-      for f in glob.glob(resampledFilesLocation + '/*_ct.nii.gz', recursive=False) ]      
+      for f in glob.glob(resampledFilesLocation + '/*_ct.nii.gz', recursive=False) ]
+    #Ranomize patient list
+    random.shuffle(patientList)      
     #For each patient, split files to generate   <00k>_<patient><_ct/_pt/_ct_gtvt>.nii.gz
     # where 0 < k < numDepthSplits-1,   numDepthSplits = patientVol_Depth / sampleInput_Depth     
 
@@ -172,13 +174,81 @@ def createSplitFiles(trainConfigfilePath,  verbose=False):
     patientInfoDict['suffixList']  = suffixList 
     patientInfoDict['listPatientsWithExtraSlice'] = listPatientsWithExtraSlice
     numDepthSplits =   patientVol_Depth //  sampleInput_Depth
+    patientInfoDict['numDepthSplits'] = numDepthSplits
     patientInfoDict['prefixList'] = ['{:>03d}'.format(k) for k in range(numDepthSplits)]
-    with open(trainConfigfilePath, 'w') as fp:
+    with open(trainConfigFilePath, 'w') as fp:
         json.dump(patientInfoDict, fp, indent=4)
         fp.close()
     print('createSplitFiles Finshed.')
     return successFlag, patientList, listPatientsWithExtraSlice
-            
-    
+
+# Cross validation plan:
+# List of patient =>  Split Files (CT, PT, GTV), NumSplits
+# N-Fold Cross Validation : 
+# Fold_i : Train_Patient Names & Split Files, CVPatient Name & Split Files
+# Train generator : Batch of Split Files with random shuffle + On the fly Data Augmentation
+# Validation generator: Batch size 1 of Split file, no data augmentation,
+#                       Merging of prediction result            
+def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
+    #Read preprocessing patients
+    with open(trainConfigFilePath) as fp:
+        previousConfig = json.load(fp)
+        fp.close()    
+    # resampledFilesLocation = previousConfig["resampledFilesLocation"]
+    # patientVol_width = previousConfig["patientVol_width"]
+    # patientVol_Height = previousConfig["patientVol_Height"]
+    # patientVol_Depth = previousConfig["patientVol_Depth"]
+    # sampleInput_Depth = previousConfig["sampleInput_Depth"]
+    # splitFilesLocation = previousConfig["splitFilesLocation"]
+    # patientList = previousConfig['patientList']
+    # suffixList = previousConfig['suffixList']
+    # listPatientsWithExtraSlice = previousConfig['listPatientsWithExtraSlice']
+    # numDepthSplits = previousConfig['numDepthSplits'] 
+    # prefixList = previousConfig['prefixList']
+    #For N fold cross validation, we will only use those patients which do not 
+    #have extra slices This will make later merging of split files easier. 
+    #Though in truth, during testing we will surely encounter patients with 
+    #extra slices, we might as well take care of them even now during cross validation.
+    #Note that in truth, none of the original _ct.nii.gz or  _pt.nii.gz or 
+    #_ct_gtvt.nii.gz files needs to be merged as they may be obtained from resampled 
+    # directory. Only, for predicted _gtvt files, while merging the predicted split files
+    #we might need an extra zero valued slice at the end of merging if the original
+    #file had an extra slice before merging.
+    newConfig = previousConfig
+    patientList = newConfig['patientList']
+    numPatients = len(patientList)
+    numCVPatients = numPatients // numCVFold
+    numTrainPatients = numPatients - numCVPatients
+    if verbose:
+        print('numPatients ', numPatients, ' numTrainPatients ', numTrainPatients, 'numCVPatients ', numCVPatients)
+    newConfig['numCVFold'] = numCVFold
+    newConfig['numTrainPatients'] = numTrainPatients
+    newConfig['numCVPatients'] = numCVPatients
+    newConfig['numPatients'] = numPatients
+    for cvIndex in range(numCVFold):
+        #newFileName = '{:>03d}_{}'.format(k,srcImgFileName)
+        trainKey = 'train_{:>03d}_Patients'.format(cvIndex)
+        cVKey = 'cv_{:>03d}_Patients'.format(cvIndex)
+        startIdx_cv = cvIndex * numCVPatients
+        endIdx_cv = (cvIndex+1) * numCVPatients
+        #Note  argument-unpacking operator i.e. *.
+        list_cvIdx = [*range(startIdx_cv, endIdx_cv)]
+        list_trainIdx =  [*range(0, startIdx_cv)] + [*range(endIdx_cv, numPatients)]    
+        cVPatients = [patientList[i] for i in list_cvIdx]
+        trainPatients = [patientList[i] for i in list_trainIdx]
+        if verbose:
+            print('cvIndex ', cvIndex, ' list_cvIdx ', list_cvIdx, ' list_trainIdx ', list_trainIdx)
+            print(cVKey, ' ', cVPatients, ' ', trainKey, ' ',trainPatients)
+        newConfig[trainKey] = trainPatients
+        newConfig[cVKey] = cVPatients
+    with open(trainConfigFilePath, 'w') as fp:
+        json.dump(newConfig, fp, indent='')
+        fp.close()
+    print('generateNFoldCVnput Finshed.')
+    return
+
+
 successFlag, patientList, listPatientsWithExtraSlice = \
     createSplitFiles('input/trainInput_DSSENet.json',  verbose=False)   
+
+generateNFoldCVnput('input/trainInput_DSSENet.json', numCVFold=5, verbose=False)

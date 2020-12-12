@@ -101,14 +101,39 @@ def mergeSubFilesIntoPatientImage(srcFolderPath, baseFileName, numDepthSplits, d
 #     json.dump(patientInfoDict,fp, indent = 4)
 
 
+# patientList = [
+#         "CHUM013",
+#         "CHGJ089",
+#         "CHUM055",
+#         "CHGJ048",
+#         "CHGJ057",
+#         "CHUS090",
+#         "CHMR005",
+#         "CHGJ072",
+#         "CHUM062",
+#         "CHGJ088",
+#         "CHUS008",
+#         "CHUM002",
+#         "CHGJ038"]
+# numCVFold = 5
+# numPatients = len(patientList)
+# numCVPatients = numPatients // numCVFold
+# numTrainPatients = numPatients - numCVPatients
+# print('numPatients ', numPatients, ' numTrainPatients ', numTrainPatients, 'numCVPatients ', numCVPatients)
+# for cvIndex in range(numCVFold):
+#     #newFileName = '{:>03d}_{}'.format(k,srcImgFileName)
+#     trainKey = 'train_{:>03d}_Patients'.format(cvIndex)
+#     cVKey = 'cv_{:>03d}_Patients'.format(cvIndex)
+#     startIdx_cv = cvIndex * numCVPatients
+#     endIdx_cv = (cvIndex+1) * numCVPatients
+#     #Note  argument-unpacking operator i.e. *.
+#     list_cvIdx = [*range(startIdx_cv, endIdx_cv)]
+#     list_trainIdx =  [*range(0, startIdx_cv)] + [*range(endIdx_cv, numPatients)]    
+#     cVPatients = [patientList[i] for i in list_cvIdx]
+#     trainPatients = [patientList[i] for i in list_trainIdx]
+#     print('cvIndex ', cvIndex, ' list_cvIdx ', list_cvIdx, ' list_trainIdx ', list_trainIdx)
+#     print(cVKey, ' ', cVPatients, ' ', trainKey, ' ',trainPatients)
 
-# Cross validation plan:
-# List of patient =>  Split Files (CT, PT, GTV), NumSplits
-# N-Fold Cross Validation : 
-# Fold_i : Train_Patient Names & Split Files, CVPatient Name & Split Files
-# Train generator : Batch of Split Files with random shuffle + On the fly Data Augmentation
-# Validation generator: Batch size 1 of Split file, no data augmentation,
-#                       Merging of prediction result
 
 # #randomize patient list
 # random.shuffle(patientList)    
