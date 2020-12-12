@@ -76,6 +76,8 @@ def resample_and_crop(input_file,
 
     origin = np.asarray([bounding_box[0], bounding_box[1], bounding_box[2]])
     sitk_volume = get_sitk_volume_from_np(np_volume, resampling, origin)
+    #Debug
+    print(output_file, ' : ', sitk_volume.GetSize())
     writer = sitk.ImageFileWriter()
     writer.SetFileName(output_file)
     writer.SetImageIO("NiftiImageIO")

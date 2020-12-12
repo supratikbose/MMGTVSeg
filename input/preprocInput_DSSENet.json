@@ -3,7 +3,7 @@
     "patientVol_width": 144,
     "patientVol_Height": 144,
     "patientVol_Depth": 144,
-    "sampleInput_Depth": 12,
+    "sampleInput_Depth": 6,
     "splitFilesLocation" : "data/hecktor_train/split",
     "numCVFolds" : 5,
     "trainAndCVJSONFilesLocation": "input"
