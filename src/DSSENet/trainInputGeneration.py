@@ -241,14 +241,15 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
             print(cVKey, ' ', cVPatients, ' ', trainKey, ' ',trainPatients)
         newConfig[trainKey] = trainPatients
         newConfig[cVKey] = cVPatients
+        #Add other training parameters
+        newConfig['lr_flip'] = True
+        newConfig['translate_random']= 30.0,       
+        newConfig['rotate_random']= 15.0,          
+        newConfig['scale_random']= 0.2,            
+        newConfig['change_intensity']= 0.05
     with open(trainConfigFilePath, 'w') as fp:
-        json.dump(newConfig, fp, indent='')
+        json.dump(newConfig, fp, indent='') #, indent='' #, indent=4
         fp.close()
     print('generateNFoldCVnput Finshed.')
     return
 
-
-successFlag, patientList, listPatientsWithExtraSlice = \
-    createSplitFiles('input/trainInput_DSSENet.json',  verbose=False)   
-
-generateNFoldCVnput('input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
