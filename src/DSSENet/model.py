@@ -4,13 +4,19 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import metrics
-from pipeline import loss #from vmsseg import loss
-from pipeline import augment #from vmsseg import augment
-from pipeline import callbacks #from vmsseg import callbacks
-from models import vmsnet
-from preprocess import data_util
 import sys
 import glob
+
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+import src
+
+from src.DSSENet import loss #from vmsseg import loss
+from src.DSSENet import augment #from vmsseg import augment
+from src.DSSENet import callbacks #from vmsseg import callbacks
+from src.DSSENet import DSSE_VNet
+from preprocess import data_util
+
 from datetime import datetime
 
 def train(model_file, data_file):
