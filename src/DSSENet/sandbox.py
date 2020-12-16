@@ -7,7 +7,17 @@ import numpy as np
 import SimpleITK as sitk
 import random
 
-    
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.utils import Sequence
+# import os
+# import sys
+# sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+# import src
+# from src.DSSENet import volume #from pipeline import volume #from vmsseg import volume
+from scipy import ndimage
+import glob    
 
 ######################################################################################################
 
@@ -151,3 +161,240 @@ def mergeSubFilesIntoPatientImage(srcFolderPath, baseFileName, numDepthSplits, d
 # if verbose:
 #     print('numCVFolds: ', numCVFolds, ' numCVPatients: ', numCVPatients, ' numTrainPatients: ', numTrainPatients)
 
+#This will be used for train and validation but not for testing where ground truth is not present
+class DSSENet_Generator(Sequence): 
+    def __init__(self,
+                trainConfigFilePath,
+                data_format='channels_last',
+                useDataAugmentationDuringTraining = True, #True for training, not true for CV  specially if we want to merge prediction
+                batch_size = 1,
+                cvFoldIndex = 0, #Can be between 0 to 4
+                isValidationFlag = False # True for validation
+                ):
+        # Read config file
+        with open(trainConfigFilePath) as fp:
+                self.trainConfig = json.load(fp)
+                fp.close() 
+        self.data_format = data_format
+        self.useDataAugmentationDuringTraining = useDataAugmentationDuringTraining
+        self.batch_size = batch_size
+        self.cvFoldIndex = cvFoldIndex
+        self.isValidationFlag = isValidationFlag
+
+        self.patientVol_width = self.trainConfig["patientVol_width"]
+        self.patientVol_Height = self.trainConfig["patientVol_Height"]
+        self.patientVol_Depth = self.trainConfig["patientVol_Depth"]
+        self.sampleInput_Depth = self.trainConfig["sampleInput_Depth"]
+        self.splitFilesLocation = self.trainConfig["splitFilesLocation"]
+        self.numDepthSplits = self.trainConfig["numDepthSplits"]
+        self.prefixList = self.trainConfig["prefixList"]
+        assert(self.numDepthSplits == len(self.prefixList))
+        self.suffixList = self.trainConfig['suffixList'] 
+        if self.isValidationFlag:
+            foldKey = 'cv_{:>03d}_Patients'.format(cvFoldIndex)
+        else:
+            foldKey = 'train_{:>03d}_Patients'.format(cvFoldIndex)
+        self.patientNames =  self.trainConfig[foldKey] 
+        self.num_cases = self.numDepthSplits * len(self.patientNames)
+
+        self.labels_to_train = self.trainConfig["labels_to_train"]
+        self.label_names = self.trainConfig["label_names"]
+        self.lr_flip = self.trainConfig["lr_flip"]
+        self.label_symmetry_map = self.trainConfig["label_symmetry_map"]
+        self.translate_random = self.trainConfig["translate_random"]
+        self.rotate_random = self.trainConfig["rotate_random"]
+        self.scale_random = self.trainConfig["scale_random"]
+        self.change_intensity = self.trainConfig["change_intensity"]
+        self.ct_low = self.trainConfig["ct_low"]        
+        self.ct_high = self.trainConfig["ct_high"]
+        self.pt_low = self.trainConfig["pt_low"]
+        self.pt_high = self.trainConfig["pt_high"]
+
+        self.cube_size = [self.sampleInput_Depth, self.patientVol_Height, self.patientVol_width]
+        if 'channels_last' == self.data_format:
+            self.X_size = self.cube_size+[2] # 2 channel CT and PET
+            self.y_size = self.cube_size+[1] # 1 channel output
+        else: # 'channel+first'
+            self.X_size = [2] + self.cube_size # 2 channel CT and PET
+            self.y_size = [1] + self.cube_size # 1 channel output
+    
+    def __len__(self):
+        #Note here, in this implementation data augmentation is not actually increasing 
+        #number of original cases; instead it is applying random transformation on one
+        #of the original case before using it in a training batch. That is why the 
+        # # the __len()__ function is not dependent on data augmentation 
+        return self.num_cases // self.batch_size
+
+    def __getitem__(self, idx):
+        # keras sequence returns a batch of datasets, not a single case like generator
+        #Note that _getitem__() gets called __len__() number of times, passing idx in range 0 <= idx < __len__()
+        batch_X = np.zeros(shape = tuple([self.batch_size] + self.X_size), dtype = np.float32)
+        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.int16)
+        returnNow = False
+        for i in range(0, self.batch_size):  
+            X = np.zeros(shape = tuple(self.X_size), dtype = np.float32)
+            y = np.zeros(shape = tuple(self.y_size), dtype = np.int16)         
+            # load case from disk
+            overallIndex = idx * self.batch_size + i
+            fileIndex = overallIndex // self.numDepthSplits
+            splitIndex = overallIndex % self.numDepthSplits
+
+            ctFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[0]
+            ptFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[1]
+            gtvFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[2]
+                        
+            #check file existence            
+            if os.path.exists(os.path.join(self.splitFilesLocation, ctFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, ctFileName), ' does not exist')  
+                returnNow = True  
+            if os.path.exists(os.path.join(self.splitFilesLocation, ptFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, ptFileName), ' does not exist')  
+                returnNow = True
+            if os.path.exists(os.path.join(self.splitFilesLocation, gtvFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, gtvFileName), ' does not exist')  
+                returnNow = True
+
+            if returnNow:
+                sys.exit() # return batch_X, batch_y, False, 0, 0, 0, 0, 0, 0
+
+            #We are here => returnNow = False
+            ctData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ctFileName)).get_fdata(), axes=(2,1,0)) #axes: depth, height, width            
+            ptData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ptFileName)).get_fdata(), axes=(2,1,0)) 
+            gtvData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, gtvFileName)).get_fdata(), axes=(2,1,0))            
+            
+            # Debug code
+            # minCT = ctData.min()
+            # maxCT = ctData.max()                 
+            # minPT = ptData.min()
+            # maxPT = ptData.max()
+            # if gtvData is not None:
+            #     minGTV = gtvData.min()
+            #     maxGTV = gtvData.max()
+            # else: 
+            #     minGTV = 0
+            #     maxGTV = 1
+            #print('BatchId ', idx, ' sampleInBatchId ', i, ' ', ctFileName, ' ', ptFileName, ' ', gtvFileName, )
+            # print('ctData shape-type-min-max: ', ctData.shape, ' ', ctData.dtype, ' ', minCT, ' ', maxCT)
+            # print('ptData shape-type-min-max: ', ptData.shape, ' ', ptData.dtype, ' ', minPT, ' ', maxPT)
+            # if gtvData is not None:
+            #     print('gtvtData shape-type-min-max: ', gtvData.shape, ' ', gtvData.dtype, ' ', minGTV, ' ', maxGTV)
+
+            #Clamp and normalize CT data <- simple normalization, just divide by 1000
+            np.clip(ctData, self.ct_low, self.ct_high, out= ctData)
+            ctData = ctData / 1000.0 #<-- This will put values between -1 and 3.1
+            ctData = ctData.astype(np.float32)        
+            #Clamp and normalize PET Data
+            np.clip(ptData, self.pt_low, self.pt_high, out= ptData)
+            ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
+            ptData = ptData.astype(np.float32)
+            #For gtv mask make it integer
+            gtvData = gtvData.astype(np.int16)
+
+            #Apply Data augmentation
+            if self.useDataAugmentationDuringTraining:
+                # translate, scale, and rotate volume
+                if self.translate_random > 0 or self.rotate_random > 0 or self.scale_random > 0:
+                    ctData, ptData, gtvData = self.random_transform(ctData, ptData, gtvData, self.rotate_random, self.scale_random, self.translate_random, fast_mode=True)
+                # No flipping or intensity modification
+
+            #Concatenate CT and PET data  in X and put X  in batch_X; Put GTV in Y and Y in batch_Y
+            if 'channels_last' == self.data_format:
+                X[:,:,:,0] = ctData
+                X[:,:,:,1] = ptData
+                y[:,:,:,0] = gtvData
+            else:
+                X[0,:,:,:] = ctData
+                X[1,:,:,:] = ptData
+                y[0,:,:,:] = gtvData
+            
+            batch_X[i,:,:,:,:] = X
+            batch_y[i,:,:,:,:] = y
+
+        #return batch_X, batch_y, True, minCT, maxCT, minPT, maxPT, minGTV, maxGTV        
+        return batch_X, batch_y
+
+
+    def generate_rotation_matrix(self,rotation_angles_deg):    
+        R = np.zeros((3,3))
+        theta_x, theta_y, theta_z  = (np.pi / 180.0) * rotation_angles_deg.astype('float64') # convert from degrees to radians
+        c_x, c_y, c_z = np.cos(theta_x), np.cos(theta_y), np.cos(theta_z)
+        s_x, s_y, s_z = np.sin(theta_x), np.sin(theta_y), np.sin(theta_z)   
+        R[0, :] = [c_z*c_y, c_z*s_y*s_x - s_z*c_x, c_z*s_y*c_x + s_z*s_x]
+        R[1, :] = [s_z*c_y, s_z*s_y*s_x + c_z*c_x, s_z*s_y*c_x - c_z*s_x]    
+        R[2, :] = [-s_y, c_y*s_x, c_y*c_x]    
+        return R
+
+    def random_transform(self, img1, img2, label, rot_angle = 15.0, scale = 0.05, translation = 0.0, fast_mode=False):
+        angles = np.random.uniform(-rot_angle, rot_angle, size = 3) 
+        R = self.generate_rotation_matrix(angles)   
+        S = np.diag(1 + np.random.uniform(-scale, scale, size = 3)) 
+        A = np.dot(R, S)
+        t = np.array(img1.shape) / 2.
+        t = t - np.dot(A,t) + np.random.uniform(-translation, translation, size=3)
+        # interpolate the image channel
+        if fast_mode:
+            # nearest neighbor (use when CPU is the bottleneck during training)
+            img1 = ndimage.affine_transform(img1, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0)
+            img2 = ndimage.affine_transform(img2, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0)
+        else:
+            # linear interpolation
+            img1 = ndimage.affine_transform(img1, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 1)  
+            img2 = ndimage.affine_transform(img2, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 1)        
+        # interpolate the label channel
+        label = ndimage.affine_transform(label, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0) 
+        return (img1, img2, label)   
+
+#Test code
+trainGenerator = DSSENet_Generator(
+    trainConfigFilePath = 'input/trainInput_DSSENet.json',
+    useDataAugmentationDuringTraining = True,
+    batch_size = 1,
+    cvFoldIndex = 1, #Can be between 0 to 4
+    isValidationFlag = False
+    )
+numBatches = trainGenerator.__len__()
+
+#Debug
+#minC, maxC, minP, maxP, minG, maxG = 50000, -50000, 50000, -50000, 50000, -50000
+for idx in range(0,numBatches):
+    batchX, batchY = trainGenerator.__getitem__(idx)
+    #Debug
+    # bX, bY, success, minCT, maxCT, minPT, maxPT, minGTV, maxGTV = trainGenerator.__getitem__(idx)
+    # if not success:
+    #     print('ERRRRRRRRRRRRRRRRRROR')
+    #     break
+    # #if minCT < -3000 or maxCT > 5000:
+    # if minPT < -0.1 or maxPT > 20:
+    #     print('Idx ', idx, ' minPT ', minPT, ' maxPT ', maxPT,  ' ------------ABNORMAL---------')
+    #     #break        
+    # if minCT < minC:
+    #     minC = minCT
+    # if maxCT > maxC:
+    #     maxC = maxCT
+    # if minPT < minP:
+    #     minP = minPT
+    # if maxPT > maxP:
+    #     maxP = maxPT
+    # if minGTV < minG:
+    #     minG = minGTV
+    # if maxGTV > maxG:
+    #     maxG = maxGTV  
+#print('minC, maxC, minP, maxP, minG, maxG ', minC, ' ', maxC, ' ', minP, ' ',  maxP, ' ', minG, ' ', maxG)
+
+
+#####################
+#minC, maxC, minP, maxP, minG, maxG  -17466.458984375   32306.255859375   -0.17402704060077667   38.8752326965332   0.0   1.0    
+#####################
+# #Check why there is CRC check error <--- This was successful
+# fileList = glob.glob('data/hecktor_train/split' + '/*.nii.gz', recursive=False) 
+# numFilesInList = len(fileList)
+# for id in range(0, numFilesInList):
+#     filePath = fileList[id]
+#     fileData = np.transpose(nib.load(filePath).get_fdata(), axes=(2,1,0))
+#     print(filePath, ' ', fileData.min(), ' ', fileData.max())

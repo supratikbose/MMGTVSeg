@@ -2,9 +2,27 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.utils import Sequence
-from pipeline import volume #from vmsseg import volume
+
+
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+import src
+from src.DSSENet import volume #from pipeline import volume #from vmsseg import volume
+
 from scipy import ndimage
 import glob
+
+class DSSENet_Generator(Sequence):
+    def __init__(self,
+                trainConfigFilePath,
+                useDataAugmentationDuringTraining = True,
+                batch_size = 1,
+                isTestOrValidationFlag = False
+                ):
+        # Read config file
+        
+        pass
 
 class images_and_labels_sequence(Sequence):
     def __init__(self, 

@@ -216,40 +216,40 @@ def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     return model
 
 
-def vmsnet(input_shape, nb_classes, init_filters = 2, filters = 4, nb_layers_per_block = [1,2,2], dropout_prob = 0, 
-        kernel_size = 3, asymmetric = True, group_normalization = True, activation_type = 'relu', final_activation_type = 'softmax'):
+# def vmsnet(input_shape, nb_classes, init_filters = 2, filters = 4, nb_layers_per_block = [1,2,2], dropout_prob = 0, 
+#         kernel_size = 3, asymmetric = True, group_normalization = True, activation_type = 'relu', final_activation_type = 'softmax'):
 
-    # validate parameters
-    nb_layers = list(nb_layers_per_block)
-    if (asymmetric == True):
-        revNb_layers = list([1]*len(nb_layers))
-    else:
-        revNb_layers = list(reversed(nb_layers))
+#     # validate parameters
+#     nb_layers = list(nb_layers_per_block)
+#     if (asymmetric == True):
+#         revNb_layers = list([1]*len(nb_layers))
+#     else:
+#         revNb_layers = list(reversed(nb_layers))
 
-    if (group_normalization == True):
-        group_norm_groups = init_filters
-    else:
-        group_norm_groups = 0
+#     if (group_normalization == True):
+#         group_norm_groups = init_filters
+#     else:
+#         group_norm_groups = 0
 
-    # encoder section
-    img_input = Input(shape = input_shape)
-    x = convolution_block(img_input, filters = init_filters, kernel_size = kernel_size, dropout_prob = dropout_prob) 
-    x, skips = down_path(x, nb_layers, filters = filters, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
-    revSkips = list(reversed(skips))
+#     # encoder section
+#     img_input = Input(shape = input_shape)
+#     x = convolution_block(img_input, filters = init_filters, kernel_size = kernel_size, dropout_prob = dropout_prob) 
+#     x, skips = down_path(x, nb_layers, filters = filters, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
+#     revSkips = list(reversed(skips))
 
-    # decoder section
-    x = up_path(x, skips = revSkips, nb_layers = revNb_layers, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
-    if (final_activation_type.lower() == 'softmax'):
-        x = convolution_block(x, filters = nb_classes, kernel_size = 1, dropout_prob = 0) 
-        x = Activation('softmax')(x)
-    elif (final_activation_type.lower() == 'sigmoid'):
-        x = convolution_block(x, filters = 1, kernel_size = 1, dropout_prob = 0) 
-        x = Activation('sigmoid')(x)
-    else:
-        print('Incorrect final_activation_type!')
-        exit()
+#     # decoder section
+#     x = up_path(x, skips = revSkips, nb_layers = revNb_layers, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
+#     if (final_activation_type.lower() == 'softmax'):
+#         x = convolution_block(x, filters = nb_classes, kernel_size = 1, dropout_prob = 0) 
+#         x = Activation('softmax')(x)
+#     elif (final_activation_type.lower() == 'sigmoid'):
+#         x = convolution_block(x, filters = 1, kernel_size = 1, dropout_prob = 0) 
+#         x = Activation('sigmoid')(x)
+#     else:
+#         print('Incorrect final_activation_type!')
+#         exit()
 
-    # model instantiation
-    model = Model(img_input, x)
+#     # model instantiation
+#     model = Model(img_input, x)
 
-    return model
+#     return model

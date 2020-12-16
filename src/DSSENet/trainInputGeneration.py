@@ -177,7 +177,7 @@ def createSplitFiles(trainConfigFilePath,  verbose=False):
     patientInfoDict['numDepthSplits'] = numDepthSplits
     patientInfoDict['prefixList'] = ['{:>03d}'.format(k) for k in range(numDepthSplits)]
     with open(trainConfigFilePath, 'w') as fp:
-        json.dump(patientInfoDict, fp, indent=4)
+        json.dump(patientInfoDict, fp) # indent=4
         fp.close()
     print('createSplitFiles Finshed.')
     return successFlag, patientList, listPatientsWithExtraSlice
@@ -241,15 +241,33 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
             print(cVKey, ' ', cVPatients, ' ', trainKey, ' ',trainPatients)
         newConfig[trainKey] = trainPatients
         newConfig[cVKey] = cVPatients
-        #Add other training parameters
-        newConfig['lr_flip'] = True
-        newConfig['translate_random']= 30.0,       
-        newConfig['rotate_random']= 15.0,          
-        newConfig['scale_random']= 0.2,            
-        newConfig['change_intensity']= 0.05
+
+        # #Add other training parameters <-- Commented as they are hardcoded at the very beginning
+        # newConfig['labels_to_train'] = [1]
+        # newConfig['label_names'] = {"1": "GTV"}
+        # newConfig['lr_flip'] = False
+        # newConfig['label_symmetry_map'] = [[1,1]]
+        # newConfig['translate_random']= 30.0       
+        # newConfig['rotate_random']= 15.0          
+        # newConfig['scale_random']= 0.2            
+        # newConfig['change_intensity']= 0.05
+        # newConfig['ct_low']= -1000       
+        # newConfig['ct_high']= 3095          
+        # newConfig['pt_low']= 0.0           
+        # newConfig['pt_high']= 20.0
+
     with open(trainConfigFilePath, 'w') as fp:
-        json.dump(newConfig, fp, indent='') #, indent='' #, indent=4
+        json.dump(newConfig, fp) #, indent='' #, indent=4
         fp.close()
     print('generateNFoldCVnput Finshed.')
     return
 
+createSplitFiles('input/trainInput_DSSENet.json',  verbose=False)
+generateNFoldCVnput('input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
+
+# with open('input/trainInput_DSSENet.json') as fp:
+#         previousConfig = json.load(fp)
+#         fp.close()   
+# with open('input/trainInput_DSSENet.json', 'w') as fp:
+#         json.dump(previousConfig, fp, ) #, indent='' #, indent=4
+#         fp.close()
