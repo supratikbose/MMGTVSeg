@@ -7,7 +7,6 @@ from tensorflow.keras import metrics
 import sys
 import glob
 
-
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 import src
 
@@ -86,8 +85,6 @@ def train(trainConfigFilePath):
     num_cpus = min(os.cpu_count(), 24)   # don't use more than 16 CPU threads
     print('Number of CPUs used for training: ', num_cpus)
 
-
-
     if (trainInputParams['AMP']):
         os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
         os.environ['CUDNN_TENSOROP_MATH'] = '1'
@@ -96,57 +93,51 @@ def train(trainConfigFilePath):
     if (trainInputParams['XLA']):
         tf.config.optimizer.set_jit(True)
     
+
+    train_sequence = augment.DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                                data_format=trainInputParams['data_format'],
+                                                useDataAugmentationDuringTraining = True,
+                                                batch_size = 2,
+                                                cvFoldIndex = 0, #Can be between 0 to 4
+                                                isValidationFlag = False
+                                                )
+
+    test_sequence = augment.DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                                data_format=trainInputParams['data_format'],
+                                                useDataAugmentationDuringTraining = False, #No augmentation during validation
+                                                batch_size = 2,
+                                                cvFoldIndex = 0, #Can be between 0 to 4
+                                                isValidationFlag = True
+                                                )
+    
     # count number of training and test cases
-    train_fnames = sorted(glob.glob(trainInputParams['path'] + '/train/' + "img*.nii.gz"))
-    test_fnames = sorted(glob.glob(trainInputParams['path'] + '/test/' + "img*.nii.gz"))
-    num_train_cases = len(train_fnames)
-    num_test_cases = len(test_fnames)
+    num_train_cases = train_sequence.__len__()
+    num_test_cases = test_sequence.__len__()
 
     print('Number of train cases: ', num_train_cases)
     print('Number of test cases: ', num_test_cases)
     print("labels to train: ", trainInputParams['labels_to_train'])
     
-    train_sequence = augment.images_and_labels_sequence(data_path = trainInputParams['path'] + '/train/', 
-                                                        batch_size = trainInputParams['batch_size'], 
-                                                        out_size = trainInputParams['image_cropped_size'], 
-                                                        translate_random = trainInputParams['translate_random'],  
-                                                        rotate_random = trainInputParams['rotate_random'],       
-                                                        scale_random = trainInputParams['scale_random'],         
-                                                        change_intensity = trainInputParams['change_intensity'],
-                                                        labels_to_train = trainInputParams['labels_to_train'],
-                                                        lr_flip = trainInputParams['lr_flip'],                                                     
-                                                        label_symmetry_map = trainInputParams['label_symmetry_map'] )
-
-    test_sequence = augment.images_and_labels_sequence( data_path = trainInputParams['path'] + '/test/',
-                                                        batch_size = min(trainInputParams['batch_size'], num_test_cases), 
-                                                        out_size = trainInputParams['image_cropped_size'],
-                                                        translate_random = 0.0,    
-                                                        rotate_random = 0.0,       
-                                                        scale_random = 0.0,         
-                                                        change_intensity = 0.0 )
+    sampleCube_dim = [trainInputParams["sampleInput_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+    if 'channels_last' == trainInputParams['data_format']:
+        input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
+        output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
+    else: # 'channels_first'
+        input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
+        output_shape = tuple([1] + sampleCube_dim) # 1 channel output
 
     # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
     # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
     # with strategy.scope():
     
     # load existing or create new model
-    if os.path.exists(trainInputParams['fname']):
+    if os.path.exists(trainInputParams["lastSavedModel"]):
         #from tensorflow.keras.models import load_model        
         #model = load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
         model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
-        print('Loaded model: ' + trainInputParams['fname'])
+        print('Loaded model: ' + trainInputParams["lastSavedModel"])
     else:
-        model = vmsnet.vmsnet(trainInputParams['image_cropped_size'] + [1,], 
-            nb_classes = len(trainInputParams['labels_to_train']) + 1, 
-            init_filters = trainInputParams['init_filters'], 
-            filters = trainInputParams['num_filters'], 
-            nb_layers_per_block = trainInputParams['num_layers_per_block'], 
-            dropout_prob = trainInputParams['dropout_rate'],
-            kernel_size = trainInputParams['kernel_size'],
-            asymmetric = trainInputParams['asymmetric'], 
-            group_normalization = trainInputParams['group_normalization'], 
-            activation_type = trainInputParams['activation_type'], 
-            final_activation_type = trainInputParams['final_activation_type'])                              
+        model = DSSE_VNet.DSSE_VNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
 
         optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
         if trainInputParams['AMP']:
@@ -157,9 +148,9 @@ def train(trainConfigFilePath):
         
     # TODO: clean up the evaluation callback
     #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
-    tb_logdir = './logs/' + os.path.basename(trainInputParams['fname']) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tb_logdir = './logs/' + os.path.basename(trainInputParams["lastSavedModel"]) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
     train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
-                tf.keras.callbacks.ModelCheckpoint(trainInputParams['fname'], monitor = "loss", save_best_only = True, mode='min')]
+                tf.keras.callbacks.ModelCheckpoint(trainInputParams["lastSavedModel"], monitor = "loss", save_best_only = True, mode='min')]
 #                callbacks.evaluate_validation_data_callback(test_images[0,:], test_labels[0,:], image_size_cropped=trainInputParams['image_cropped_size'], 
 #                    resolution = trainInputParams['spacing'], save_to_nii=True) ]
 

@@ -255,6 +255,8 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
         # newConfig['ct_high']= 3095          
         # newConfig['pt_low']= 0.0           
         # newConfig['pt_high']= 20.0
+        # newConfig['data_format']= "channels_last"
+        # newConfig['num_training_epochs']= 50
 
     with open(trainConfigFilePath, 'w') as fp:
         json.dump(newConfig, fp) #, indent='' #, indent=4

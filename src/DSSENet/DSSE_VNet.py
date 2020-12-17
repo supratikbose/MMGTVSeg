@@ -16,7 +16,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, Concatenate
+from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, Concatenate
 from tensorflow.keras.layers import GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
 import tensorflow_addons as tfa
 from tensorflow.keras import regularizers
@@ -132,7 +132,7 @@ def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     ########## Encode path ##########       (using the terminology from Ref1)
     #InTr  128 x 128 x 128 x 2 ==> 128 x 128 x 128 x 16
     #2 channel 128 x 128 x 128 
-    img_input = Input(shape = input_shape) # (Nc, D, H, W) if channels_first else  (Batch, D, H, W, Nc)
+    img_input = Input(shape = input_shape) # (Nc, D, H, W) if channels_first else  (D, H, W, Nc) Note batch_size is not included
     # if the input has more than 1 channel it has to be expanded because broadcasting only works for 1 input
     # channel
     input_channels =  input_shape[-1] if 'channels_last' == data_format else input_shape[-4] #config["inputChannels"]
