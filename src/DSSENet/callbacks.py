@@ -1,8 +1,13 @@
-from tensorflow.keras import callbacks
 import numpy as np
 import time
-from pipeline import metrics #from vmsseg import metrics
-from pipeline import volume #from vmsseg import volume
+from tensorflow.keras import callbacks
+
+import sys
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src.DSSENet import metrics
+from src.DSSENet import volume
+
 
 class evaluate_validation_data_callback(callbacks.Callback):
 

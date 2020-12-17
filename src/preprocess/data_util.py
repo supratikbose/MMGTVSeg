@@ -12,7 +12,10 @@ import pickle
 import SimpleITK
 import glob
 import sys
-from pipeline import volume #from vmsseg import volume
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src.DSSENet import volume #from vmsseg import volume
+
 from scipy import ndimage
 from shutil import copyfile
 import pydicom

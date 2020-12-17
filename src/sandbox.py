@@ -5,18 +5,16 @@ import sys
 import nibabel as nib
 import numpy as np
 import SimpleITK as sitk
+from scipy import ndimage
 import random
-
-
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.utils import Sequence
-# import os
-# import sys
+
 # sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-# import src
+#import src
 # from src.DSSENet import volume #from pipeline import volume #from vmsseg import volume
-from scipy import ndimage
+
 
 
 
@@ -439,4 +437,7 @@ def mergeSubFilesIntoPatientImage(srcFolderPath, baseFileName, numDepthSplits, d
 # batchX, batchY = trainGenerator.__getitem__(5)
 # displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec = 0.5)
 
-
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src.DSSENet import model
+model.train('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json')
