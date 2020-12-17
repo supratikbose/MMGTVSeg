@@ -11,17 +11,399 @@
 # the mean for axis=0, just as you expect. This is why bn.moving_mean has shape (4,).
 # In our case we we should do the batch_normalization along (i.e., preserving) the channel axis
 
-
+import os
+import json
 import numpy as np
+import sys
+import glob
+from datetime import datetime
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+import src
+
+import nibabel as nib
+from scipy import ndimage
+from scipy.ndimage import morphology
+import SimpleITK
+
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, Concatenate
-from tensorflow.keras.layers import GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
+from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, Concatenate, GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
+from tensorflow.keras import regularizers, metrics
+from tensorflow.keras.utils import Sequence
 import tensorflow_addons as tfa
-from tensorflow.keras import regularizers
+
+######### Loss functions ##########
+# mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
+def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True):
+    num_dim = len(K.int_shape(y_pred)) 
+    num_labels = K.int_shape(y_pred)[-1]
+    reduce_axis = list(range(1, num_dim - 1))
+    y_true = y_true[..., 0]
+    dice = 0.0
+
+    if (ignore_zero_label == True):
+        label_range = range(1, num_labels)
+    else:
+        label_range = range(0, num_labels)
+
+    for i in label_range:
+        y_pred_b = y_pred[..., i]
+        y_true_b = K.cast(K.equal(y_true, i), K.dtype(y_pred))
+        intersection = K.sum(y_true_b * y_pred_b, axis = reduce_axis)        
+        if squared_denominator: 
+            y_pred_b = K.square(y_pred_b)
+        y_true_o = K.sum(y_true_b, axis = reduce_axis)
+        y_pred_o =  K.sum(y_pred_b, axis = reduce_axis)     
+        d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth) 
+        dice = dice + K.mean(d)
+    dice = dice / len(label_range)
+    return dice
+
+def dice_loss(y_true, y_pred):
+    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False)
+    return f
+
+def dice_loss_fg(y_true, y_pred):
+    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True)
+    return f
+
+def modified_dice_loss(y_true, y_pred):
+    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False)
+    return f
+
+def modified_dice_loss_fg(y_true, y_pred):
+    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True)
+    return f
+
+#################   Metrics ##############
+def surface_distance_array(test_labels, gt_labels, sampling=1, connectivity=1):
+    input_1 = np.atleast_1d(test_labels.astype(np.bool))
+    input_2 = np.atleast_1d(gt_labels.astype(np.bool))      
+    conn = morphology.generate_binary_structure(input_1.ndim, connectivity)
+    s = input_1 ^ morphology.binary_erosion(input_1, conn)         # ^ is the logical XOR operator
+    s_prime = input_2 ^ morphology.binary_erosion(input_2, conn)   # ^ is the logical XOR operator     
+    dta = morphology.distance_transform_edt(~s, sampling)
+    dtb = morphology.distance_transform_edt(~s_prime, sampling)
+    sds = np.concatenate([np.ravel(dta[s_prime!=0]), np.ravel(dtb[s!=0])])        
+    msd = sds.mean()
+    sd_stdev=sds.std()
+    rms = np.sqrt((sds**2).mean())
+    hd  = sds.max()
+    return msd,sd_stdev,rms, hd, sds
+
+def surface_distance(test_labels, gt_labels, sampling=1, connectivity=1):
+    input_1 = np.atleast_1d(test_labels.astype(np.bool))
+    input_2 = np.atleast_1d(gt_labels.astype(np.bool))      
+    conn = morphology.generate_binary_structure(input_1.ndim, connectivity)
+    s = input_1 ^ morphology.binary_erosion(input_1, conn)         # ^ is the logical XOR operator
+    s_prime = input_2 ^ morphology.binary_erosion(input_2, conn)   # ^ is the logical XOR operator     
+    dta = morphology.distance_transform_edt(~s, sampling)
+    dtb = morphology.distance_transform_edt(~s_prime, sampling)
+    sds = np.concatenate([np.ravel(dta[s_prime!=0]), np.ravel(dtb[s!=0])])        
+    msd = sds.mean()
+    sd_stdev=sds.std()
+    rms = np.sqrt((sds**2).mean())
+    hd  = sds.max()
+    return msd, sd_stdev, rms, hd
+
+def surface_distance_multi_label(test, gt, sampling=1):
+    labels = np.unique(gt)
+    ti = labels > 0
+    unique_lbls = labels[ti]
+    msd = np.zeros(len(unique_lbls))
+    sd_stdev = np.zeros(len(unique_lbls))
+    rms = np.zeros(len(unique_lbls))
+    hd = np.zeros(len(unique_lbls))
+    i = 0
+    for lbl_num in unique_lbls:
+            ti = (test == lbl_num)
+            ti2 = (gt == lbl_num)
+            test_mask = np.zeros(test.shape, dtype=np.uint8)
+            test_mask[ti] = 1
+            gt_mask = np.zeros(gt.shape, dtype=np.uint8)
+            gt_mask[ti2] = 1
+            msd[i], sd_stdev[i], rms[i], hd[i] = surface_distance(test_mask, gt_mask, sampling)
+            i = i + 1
+    return unique_lbls, msd, rms, hd
+
+def dice_coef_func(a,b):
+    a = a.astype(np.uint8).flatten()
+    b = b.astype(np.uint8).flatten()
+    dice = (2 * np.sum(np.multiply(a,b))) / (np.sum(a) + np.sum(b))
+    return dice
+        
+def dice_multi_label(test, gt):
+    labels = np.unique(gt)
+    ti = labels > 0
+    unique_lbls = labels[ti]
+    dice = np.zeros(len(unique_lbls))
+    i = 0
+    for lbl_num in unique_lbls:
+            ti = (test == lbl_num)
+            ti2 = (gt == lbl_num)
+            test_mask = np.zeros(test.shape, dtype=np.uint8)
+            test_mask[ti] = 1
+            gt_mask = np.zeros(gt.shape, dtype=np.uint8)
+            gt_mask[ti2] = 1
+            dice[i] = dice_coef_func(test_mask, gt_mask)
+            i = i + 1
+    return dice
+
+def surface_distance_from_nii(test_file, gt_file):    
+        test = SimpleITK.ReadImage(test_file)
+        test_lbl = np.transpose(SimpleITK.GetArrayFromImage(test), (2,1,0))
+        gt = SimpleITK.ReadImage(gt_file)
+        gt_lbl = np.transpose(SimpleITK.GetArrayFromImage(gt), (2,1,0))
+        lbls, msd, rms, hd = surface_distance_multi_label(test_lbl, gt_lbl, gt.GetSpacing())
+        return lbls, msd, rms, hd
+
+def dice_from_nii(test_file, gt_file):    
+        test = SimpleITK.ReadImage(test_file)
+        test_lbl = np.transpose(SimpleITK.GetArrayFromImage(test), (2,1,0))
+        gt = SimpleITK.ReadImage(gt_file)
+        gt_lbl = np.transpose(SimpleITK.GetArrayFromImage(gt), (2,1,0))
+        dice = dice_multi_label(test_lbl, gt_lbl)
+        return dice
+
+def volume(label):
+        volume=np.sum(label)
+        return volume
+
+def COM(label):
+        #Get the coordinates of the nonzero indices
+        indices=np.nonzero(label)
+        #Take the average of the index values in each direction to get the center of mass
+        COMx=np.mean(indices[0])
+        COMy=np.mean(indices[1])
+        COMz=np.mean(indices[2])
+        return COMx, COMy, COMz
+
+###############  data generator ##############
+class DSSENet_Generator(Sequence): 
+    def __init__(self,
+                trainConfigFilePath,
+                data_format='channels_last',
+                useDataAugmentationDuringTraining = True, #True for training, not true for CV  specially if we want to merge prediction
+                batch_size = 1,
+                cvFoldIndex = 0, #Can be between 0 to 4
+                isValidationFlag = False # True for validation
+                ):
+        # Read config file
+        with open(trainConfigFilePath) as fp:
+                self.trainConfig = json.load(fp)
+                fp.close() 
+        self.data_format = data_format
+        self.useDataAugmentationDuringTraining = useDataAugmentationDuringTraining
+        self.batch_size = batch_size
+        self.cvFoldIndex = cvFoldIndex
+        self.isValidationFlag = isValidationFlag
+
+        self.patientVol_width = self.trainConfig["patientVol_width"]
+        self.patientVol_Height = self.trainConfig["patientVol_Height"]
+        self.patientVol_Depth = self.trainConfig["patientVol_Depth"]
+        self.sampleInput_Depth = self.trainConfig["sampleInput_Depth"]
+        self.splitFilesLocation = self.trainConfig["splitFilesLocation"]
+        self.numDepthSplits = self.trainConfig["numDepthSplits"]
+        self.prefixList = self.trainConfig["prefixList"]
+        assert(self.numDepthSplits == len(self.prefixList))
+        self.suffixList = self.trainConfig['suffixList'] 
+        if self.isValidationFlag:
+            foldKey = 'cv_{:>03d}_Patients'.format(cvFoldIndex)
+        else:
+            foldKey = 'train_{:>03d}_Patients'.format(cvFoldIndex)
+        self.patientNames =  self.trainConfig[foldKey] 
+        self.num_cases = self.numDepthSplits * len(self.patientNames)
+
+        self.labels_to_train = self.trainConfig["labels_to_train"]
+        self.label_names = self.trainConfig["label_names"]
+        self.lr_flip = self.trainConfig["lr_flip"]
+        self.label_symmetry_map = self.trainConfig["label_symmetry_map"]
+        self.translate_random = self.trainConfig["translate_random"]
+        self.rotate_random = self.trainConfig["rotate_random"]
+        self.scale_random = self.trainConfig["scale_random"]
+        self.change_intensity = self.trainConfig["change_intensity"]
+        self.ct_low = self.trainConfig["ct_low"]        
+        self.ct_high = self.trainConfig["ct_high"]
+        self.pt_low = self.trainConfig["pt_low"]
+        self.pt_high = self.trainConfig["pt_high"]
+
+        self.cube_size = [self.sampleInput_Depth, self.patientVol_Height, self.patientVol_width]
+        if 'channels_last' == self.data_format:
+            self.X_size = self.cube_size+[2] # 2 channel CT and PET
+            self.y_size = self.cube_size+[1] # 1 channel output
+        else: # 'channels_first'
+            self.X_size = [2] + self.cube_size # 2 channel CT and PET
+            self.y_size = [1] + self.cube_size # 1 channel output
+    
+    def __len__(self):
+        #Note here, in this implementation data augmentation is not actually increasing 
+        #number of original cases; instead it is applying random transformation on one
+        #of the original case before using it in a training batch. That is why the 
+        # # the __len()__ function is not dependent on data augmentation 
+        return self.num_cases // self.batch_size
+
+    def __getitem__(self, idx):
+        # keras sequence returns a batch of datasets, not a single case like generator
+        #Note that _getitem__() gets called __len__() number of times, passing idx in range 0 <= idx < __len__()
+        batch_X = np.zeros(shape = tuple([self.batch_size] + self.X_size), dtype = np.float32)
+        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.int16)
+        returnNow = False
+        for i in range(0, self.batch_size):  
+            X = np.zeros(shape = tuple(self.X_size), dtype = np.float32)
+            y = np.zeros(shape = tuple(self.y_size), dtype = np.int16)         
+            # load case from disk
+            overallIndex = idx * self.batch_size + i
+            fileIndex = overallIndex // self.numDepthSplits
+            splitIndex = overallIndex % self.numDepthSplits
+
+            ctFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[0]
+            ptFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[1]
+            gtvFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[2]
+                        
+            #check file existence            
+            if os.path.exists(os.path.join(self.splitFilesLocation, ctFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, ctFileName), ' does not exist')  
+                returnNow = True  
+            if os.path.exists(os.path.join(self.splitFilesLocation, ptFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, ptFileName), ' does not exist')  
+                returnNow = True
+            if os.path.exists(os.path.join(self.splitFilesLocation, gtvFileName)):
+                pass
+            else:
+                print(os.path.join(self.splitFilesLocation, gtvFileName), ' does not exist')  
+                returnNow = True
+
+            if returnNow:
+                sys.exit() # return batch_X, batch_y, False, 0, 0, 0, 0, 0, 0
+
+            #We are here => returnNow = False
+            ctData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ctFileName)).get_fdata(), axes=(2,1,0)) #axes: depth, height, width            
+            ptData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ptFileName)).get_fdata(), axes=(2,1,0)) 
+            gtvData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, gtvFileName)).get_fdata(), axes=(2,1,0))            
+            
+            #Clamp and normalize CT data <- simple normalization, just divide by 1000
+            np.clip(ctData, self.ct_low, self.ct_high, out= ctData)
+            ctData = ctData / 1000.0 #<-- This will put values between -1 and 3.1
+            ctData = ctData.astype(np.float32)        
+            #Clamp and normalize PET Data
+            np.clip(ptData, self.pt_low, self.pt_high, out= ptData)
+            ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
+            ptData = ptData.astype(np.float32)
+            #For gtv mask make it integer
+            gtvData = gtvData.astype(np.int16)
+
+            #Apply Data augmentation
+            if self.useDataAugmentationDuringTraining:
+                # translate, scale, and rotate volume
+                if self.translate_random > 0 or self.rotate_random > 0 or self.scale_random > 0:
+                    ctData, ptData, gtvData = self.random_transform(ctData, ptData, gtvData, self.rotate_random, self.scale_random, self.translate_random, fast_mode=True)
+                # No flipping or intensity modification
+
+            #Concatenate CT and PET data  in X and put X  in batch_X; Put GTV in Y and Y in batch_Y
+            if 'channels_last' == self.data_format:
+                X[:,:,:,0] = ctData
+                X[:,:,:,1] = ptData
+                y[:,:,:,0] = gtvData
+            else:
+                X[0,:,:,:] = ctData
+                X[1,:,:,:] = ptData
+                y[0,:,:,:] = gtvData
+            
+            batch_X[i,:,:,:,:] = X
+            batch_y[i,:,:,:,:] = y
+
+        #return batch_X, batch_y, True, minCT, maxCT, minPT, maxPT, minGTV, maxGTV        
+        return batch_X, batch_y
 
 
+    def generate_rotation_matrix(self,rotation_angles_deg):    
+        R = np.zeros((3,3))
+        theta_x, theta_y, theta_z  = (np.pi / 180.0) * rotation_angles_deg.astype('float64') # convert from degrees to radians
+        c_x, c_y, c_z = np.cos(theta_x), np.cos(theta_y), np.cos(theta_z)
+        s_x, s_y, s_z = np.sin(theta_x), np.sin(theta_y), np.sin(theta_z)   
+        R[0, :] = [c_z*c_y, c_z*s_y*s_x - s_z*c_x, c_z*s_y*c_x + s_z*s_x]
+        R[1, :] = [s_z*c_y, s_z*s_y*s_x + c_z*c_x, s_z*s_y*c_x - c_z*s_x]    
+        R[2, :] = [-s_y, c_y*s_x, c_y*c_x]    
+        return R
+
+    def random_transform(self, img1, img2, label, rot_angle = 15.0, scale = 0.05, translation = 0.0, fast_mode=False):
+        angles = np.random.uniform(-rot_angle, rot_angle, size = 3) 
+        R = self.generate_rotation_matrix(angles)   
+        S = np.diag(1 + np.random.uniform(-scale, scale, size = 3)) 
+        A = np.dot(R, S)
+        t = np.array(img1.shape) / 2.
+        t = t - np.dot(A,t) + np.random.uniform(-translation, translation, size=3)
+        # interpolate the image channel
+        if fast_mode:
+            # nearest neighbor (use when CPU is the bottleneck during training)
+            img1 = ndimage.affine_transform(img1, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0)
+            img2 = ndimage.affine_transform(img2, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0)
+        else:
+            # linear interpolation
+            img1 = ndimage.affine_transform(img1, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 1)  
+            img2 = ndimage.affine_transform(img2, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 1)        
+        # interpolate the label channel
+        label = ndimage.affine_transform(label, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0) 
+        return (img1, img2, label)   
+
+import matplotlib.pyplot as plt
+def displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec = 0.5):
+    numSamplesInBatch = batchX.shape[0]
+    depth = batchX.shape[1] if 'channels_last' == data_format else batchX.shape[2]
+    for sampleId in range(0,numSamplesInBatch):
+        plt.figure(sampleId+1)
+        for sliceId in range(0,depth):
+            #Display CT        
+            plt.subplot(3, depth, sliceId+1)
+            plt.axis('off')
+            plt.title('CT_'+str(sliceId), fontsize=8) 
+            if 'channels_last' == data_format:
+                plt.imshow(batchX[sampleId, sliceId,:, :, 0])
+            else: # 'channel_first'
+                plt.imshow(batchX[sampleId, 0, sliceId,:, :])
+            #Display PET        
+            plt.subplot(3, depth, depth + sliceId+1)
+            plt.axis('off')
+            plt.title('PT_'+str(sliceId), fontsize=8)
+            if 'channels_last' == data_format:
+                plt.imshow(batchX[sampleId, sliceId,:, :, 1])
+            else: # 'channel_first'
+                plt.imshow(batchX[sampleId, 1, sliceId,:, :])
+            #Display GTV        
+            plt.subplot(3, depth, 2*depth + sliceId+1)
+            plt.axis('off')
+            plt.title('GTV_'+str(sliceId), fontsize=8)
+            if 'channels_last' == data_format:
+                plt.imshow(batchY[sampleId, sliceId,:, :, 0])
+            else: # 'channel_first'
+                plt.imshow(batchY[sampleId, 0, sliceId,:, :])
+        plt.show()
+        plt.pause(pauseTime_sec)
+
+
+#Test code
+# trainGenerator = DSSENet_Generator(
+#     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+#     data_format='channels_last',
+#     useDataAugmentationDuringTraining = False,
+#     batch_size = 2,
+#     cvFoldIndex = 1, #Can be between 0 to 4
+#     isValidationFlag = False
+#     )
+# numBatches = trainGenerator.__len__()
+# batchX, batchY = trainGenerator.__getitem__(5)
+# displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec = 0.5)
+
+# for idx in range(0,numBatches):
+#     batchX, batchY = trainGenerator.__getitem__(idx)         
+
+################### DSSE_VNet ##################
 
 def getBNAxis(data_format='channels_last'):
     if 'channels_last' == data_format:
@@ -215,41 +597,132 @@ def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     model = Model(img_input, _Final)
     return model
 
+############### Model train and test function #################
+def train(trainConfigFilePath):
+    # load trainInputParams  from JSON config files
+    with open(trainConfigFilePath) as f:
+        trainInputParams = json.load(f)
+        f.close()
 
-# def vmsnet(input_shape, nb_classes, init_filters = 2, filters = 4, nb_layers_per_block = [1,2,2], dropout_prob = 0, 
-#         kernel_size = 3, asymmetric = True, group_normalization = True, activation_type = 'relu', final_activation_type = 'softmax'):
+    trainInputParams['loss_func'] = dice_loss
+    trainInputParams['acc_func'] = metrics.categorical_accuracy
+    trainInputParams['group_normalization'] = False
+    trainInputParams['activation_type'] = 'relu'
+    trainInputParams['final_activation_type'] = 'softmax'
+    trainInputParams['AMP'] = False
+    trainInputParams['XLA'] = False
 
-#     # validate parameters
-#     nb_layers = list(nb_layers_per_block)
-#     if (asymmetric == True):
-#         revNb_layers = list([1]*len(nb_layers))
-#     else:
-#         revNb_layers = list(reversed(nb_layers))
+    if 'labels_to_train' not in trainInputParams:
+        trainInputParams['labels_to_train'] = [1]
+    if 'asymmetric' not in trainInputParams:
+        trainInputParams['asymmetric'] = True
+    
+    #Original
+    # determine number of available GPUs and CPUs
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    num_gpus = len(gpus)    
+    print('Number of GPUs used for training: ', num_gpus)
+    # prevent tensorflow from allocating all available GPU memory
+    if (num_gpus > 0):
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
 
-#     if (group_normalization == True):
-#         group_norm_groups = init_filters
-#     else:
-#         group_norm_groups = 0
+    # #Limit GPU use to a single GPU as I am not sure whether that messed up tensorboard
+    # # I earlier saw an error message about multiGPU and tensorboard
+    # gpus = tf.config.experimental.list_physical_devices('GPU')
+    # num_gpus = len(gpus)    
+    # print('Number of GPUs AVAILABLE for training: ', num_gpus)
+    # if gpus:
+    #     print("Restricting TensorFlow to only use the first GPU.")
+    #     try:
+    #         tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+    #         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+    #         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+    #     except RuntimeError as e:
+    #         # Visible devices must be set before GPUs have been initialized
+    #         print(e)
 
-#     # encoder section
-#     img_input = Input(shape = input_shape)
-#     x = convolution_block(img_input, filters = init_filters, kernel_size = kernel_size, dropout_prob = dropout_prob) 
-#     x, skips = down_path(x, nb_layers, filters = filters, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
-#     revSkips = list(reversed(skips))
+    num_cpus = min(os.cpu_count(), 24)   # don't use more than 16 CPU threads
+    print('Number of CPUs used for training: ', num_cpus)
 
-#     # decoder section
-#     x = up_path(x, skips = revSkips, nb_layers = revNb_layers, dropout_prob = dropout_prob, kernel_size = kernel_size, group_norm_groups = group_norm_groups, activation_type=activation_type, concatenate = True)
-#     if (final_activation_type.lower() == 'softmax'):
-#         x = convolution_block(x, filters = nb_classes, kernel_size = 1, dropout_prob = 0) 
-#         x = Activation('softmax')(x)
-#     elif (final_activation_type.lower() == 'sigmoid'):
-#         x = convolution_block(x, filters = 1, kernel_size = 1, dropout_prob = 0) 
-#         x = Activation('sigmoid')(x)
-#     else:
-#         print('Incorrect final_activation_type!')
-#         exit()
+    if (trainInputParams['AMP']):
+        os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
+        os.environ['CUDNN_TENSOROP_MATH'] = '1'
+        print('Using Automatic Mixed Precision (AMP) Arithmentic...')
 
-#     # model instantiation
-#     model = Model(img_input, x)
+    if (trainInputParams['XLA']):
+        tf.config.optimizer.set_jit(True)
+    
 
-#     return model
+    train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                        data_format=trainInputParams['data_format'],
+                                        useDataAugmentationDuringTraining = True,
+                                        batch_size = 2,
+                                        cvFoldIndex = 0, #Can be between 0 to 4
+                                        isValidationFlag = False
+                                                )
+
+    test_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                        data_format=trainInputParams['data_format'],
+                                        useDataAugmentationDuringTraining = False, #No augmentation during validation
+                                        batch_size = 2,
+                                        cvFoldIndex = 0, #Can be between 0 to 4
+                                        isValidationFlag = True
+                                        )
+    
+    # count number of training and test cases
+    num_train_cases = train_sequence.__len__()
+    num_test_cases = test_sequence.__len__()
+
+    print('Number of train cases: ', num_train_cases)
+    print('Number of test cases: ', num_test_cases)
+    print("labels to train: ", trainInputParams['labels_to_train'])
+    
+    sampleCube_dim = [trainInputParams["sampleInput_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+    if 'channels_last' == trainInputParams['data_format']:
+        input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
+        output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
+    else: # 'channels_first'
+        input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
+        output_shape = tuple([1] + sampleCube_dim) # 1 channel output
+
+    # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
+    # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+    # with strategy.scope():
+    
+    # load existing or create new model
+    if os.path.exists(trainInputParams["lastSavedModel"]):
+        #from tensorflow.keras.models import load_model        
+        #model = load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
+        model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
+        print('Loaded model: ' + trainInputParams["lastSavedModel"])
+    else:
+        model = DSSE_VNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
+
+        optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+        if trainInputParams['AMP']:
+            optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+
+        model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'], metrics = [trainInputParams['acc_func']])
+        model.summary(line_length=140)
+        
+    # TODO: clean up the evaluation callback
+    #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
+    tb_logdir = './logs/' + os.path.basename(trainInputParams["lastSavedModel"]) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
+                tf.keras.callbacks.ModelCheckpoint(trainInputParams["lastSavedModel"], monitor = "loss", save_best_only = True, mode='min')]
+#                callbacks.evaluate_validation_data_callback(test_images[0,:], test_labels[0,:], image_size_cropped=trainInputParams['image_cropped_size'], 
+#                    resolution = trainInputParams['spacing'], save_to_nii=True) ]
+
+    model.fit_generator(train_sequence,
+                        steps_per_epoch = num_train_cases // trainInputParams['batch_size'],
+                        max_queue_size = 40,
+                        epochs = trainInputParams['num_training_epochs'],
+                        validation_data = test_sequence,
+                        validation_steps = 1,
+                        callbacks = train_callbacks,
+                        use_multiprocessing = True,
+                        workers = num_cpus, 
+                        shuffle = True)
+
+    model.save(trainInputParams['fname'] + '_final')
