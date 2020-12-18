@@ -439,5 +439,5 @@ def mergeSubFilesIntoPatientImage(srcFolderPath, baseFileName, numDepthSplits, d
 
 sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
 import src
-from src.DSSENet import model
-model.train('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json')
+from src.DSSENet import DSSE_VNet
+DSSE_VNet.train('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json')

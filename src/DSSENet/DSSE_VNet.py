@@ -29,7 +29,7 @@ import SimpleITK
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, Concatenate, GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
+from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
 from tensorflow.keras import regularizers, metrics
 from tensorflow.keras.utils import Sequence
 import tensorflow_addons as tfa
@@ -404,6 +404,9 @@ def displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec =
 #     batchX, batchY = trainGenerator.__getitem__(idx)         
 
 ################### DSSE_VNet ##################
+def shape(tensor):
+    s = tensor.get_shape()
+    return tuple([s[i].value for i in range(0, len(s))])
 
 def getBNAxis(data_format='channels_last'):
     if 'channels_last' == data_format:
@@ -440,7 +443,7 @@ def UpConvBnElu(x, in_filters,  kernel_initializer = 'he_normal', padding = 'sam
 # Note  2nd ConvBnElu has kernel size = 3x3x3
 #D x H x W x f ==> D x H x W x f  
 def UpperLayerSingleResidualBlock(x,data_format='channels_last'):
-    filters = x._keras_shape[getBNAxis(data_format)]
+    filters = x.get_shape().as_list()[getBNAxis(data_format)] #x._keras_shape[getBNAxis(data_format)]
     shortcut = x     
     x = ConvBnElu(x, filters=filters, kernel_size = (5,5,5), strides = (1,1,1), data_format=data_format)
     x = ConvBnElu(x, filters=filters, kernel_size = (3,3,3), strides = (1,1,1), data_format=data_format)
@@ -450,7 +453,7 @@ def UpperLayerSingleResidualBlock(x,data_format='channels_last'):
 #This is essentially the concatenation of orange (single Residual) block and pink (bottom double residual) block in Figure 1 of Ref 1: 
 #D x H x W x f ==> D x H x W x f 
 def SingleAndDoubleResidualBlock(x,data_format='channels_last'):
-    filters = x._keras_shape[getBNAxis(data_format)]
+    filters = x.get_shape().as_list()[getBNAxis(data_format)] #x._keras_shape[getBNAxis(data_format)]
     #First single Res block
     shortcut_1 = x
     #Residualblock1:Conv1
@@ -490,7 +493,7 @@ def Squeeze_Excite_block(x, ratio=16, data_format='channels_last'):
     '''
     #init = input
     #channel_axis = getBNAxis(data_format) #1 if K.image_data_format() == "channels_first" else -1
-    filters =  x._keras_shape[getBNAxis(data_format)] #init._keras_shape[channel_axis] ##x.get_shape().as_list()[getBNAxis(data_format)] 
+    filters =  x.get_shape().as_list()[getBNAxis(data_format)] #x._keras_shape[getBNAxis(data_format)] #init._keras_shape[channel_axis] ##x.get_shape().as_list()[getBNAxis(data_format)] 
     # Note se_shape is the target shape with out considering the batch_size rank
     # In the 2D case it was : se_shape = (1, 1, filters)  
     se_shape = (1, 1, 1, filters) 
@@ -508,94 +511,144 @@ def Squeeze_Excite_block(x, ratio=16, data_format='channels_last'):
     x = Multiply()([x, se])
     return x
 
-
+# 16*9 = 144
+# 144 => 72  => 36  => 18  => 9
+#  32 => 16  => 8   => 4   => 2
+# OR
+#  16 => 8  => 4   => 2   => 1
 def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
 
     ########## Encode path ##########       (using the terminology from Ref1)
-    #InTr  128 x 128 x 128 x 2 ==> 128 x 128 x 128 x 16
-    #2 channel 128 x 128 x 128 
+    #InTr  D x H x W x C ==> D x H x W x 16
+    #  16 x 144 x 144 x 2 channel
+	
+	#>>>>>>>> <tf.Tensor 'input_1:0' shape=(None, 16, 144, 144, 2) dtype=float32>
     img_input = Input(shape = input_shape) # (Nc, D, H, W) if channels_first else  (D, H, W, Nc) Note batch_size is not included
     # if the input has more than 1 channel it has to be expanded because broadcasting only works for 1 input
     # channel
+	#>>>>>>> (16, 144, 144, 2)
     input_channels =  input_shape[-1] if 'channels_last' == data_format else input_shape[-4] #config["inputChannels"]
     tile_tensor    =  [1,1,1,1,16]    if 'channels_last' == data_format else [1,16,1,1,1]    #config["inputChannels"]
     if 1 == input_channels:
         sixteen_channelInput = tf.tile(img_input,tile_tensor)
     else:
+		#>>>>>> <tf.Tensor 'elu/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
         sixteen_channelInput = ConvBnElu(img_input, filters=16, kernel_size = (5,5,5), strides = (1,1,1),  data_format=data_format)
     #In Table 1 of Ref 1, stride of 1x1x5 was mentioned for conv1, but we are sicking to stride 1x1x1; And here conv1 step includes add + elu
+	#>>>>>>> <tf.Tensor 'elu_1/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
     _InTr =  ELU()(Add()([ConvBnElu(sixteen_channelInput, filters=16, kernel_size = (5,5,5), strides = (1,1,1),  data_format=data_format), sixteen_channelInput]))
+	#>>>>>> <tf.Tensor 'spatial_dropout3d/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
     _InTrDropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_InTr)
 
-    #DownTr32  128 x 128 x 128 x 16 ==> 64 x 64 x 64 x 32  
-    _DownTr32  =  DownConvBnElu(x=_InTr, in_filters=16,  data_format=data_format)  
+    #DownTr32  D x H x W x 16 ==> D/2 x H/2 x W/2 x 32  
+	#>>>>>> <tf.Tensor 'elu_3/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+    _DownTr32  =  DownConvBnElu(x=_InTr, in_filters=16,  data_format=data_format)
+	#>>>>>> <tf.Tensor 'elu_6/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
     _DownTr32  =  UpperLayerSingleResidualBlock(x=_DownTr32, data_format=data_format)
+	#>>>>>> <tf.Tensor 'elu_9/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
     _DownTr32  =  UpperLayerSingleResidualBlock(x=_DownTr32, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
     _DownTr32  =  Squeeze_Excite_block(x=_DownTr32, ratio=8, data_format=data_format)
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_1/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
     _DownTr32Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr32)
 
-    #DownTr64   64 x 64 x 64 x 32 ==> 32 x 32 x 32 x 64  
-    _DownTr64  =  DownConvBnElu(x=_DownTr32, in_filters=32,  data_format=data_format)  
+    #DownTr64   D/2 x H/2 x W/2 x 32 ==> D/4 x H/4 x W/4  x 64  
+	#>>>>>> <tf.Tensor 'elu_10/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
+    _DownTr64  =  DownConvBnElu(x=_DownTr32, in_filters=32,  data_format=data_format)
+    #>>>>>> <tf.Tensor 'elu_20/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>	
     _DownTr64  =  SingleAndDoubleResidualBlock(x=_DownTr64,  data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_1/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
     _DownTr64  =  Squeeze_Excite_block(x=_DownTr64, ratio=8, data_format=data_format)
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_2/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
     _DownTr64Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr64)
 
-     #DownTr128   32 x 32 x 32 x 64 ==> 16 x 16 x 16 x 128  
+     #DownTr128   D/4 x H/4 x W/4  x 64 ==> D/8 x H/8 x W/8 x 128
+	#>>>>>> <tf.Tensor 'elu_21/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
     _DownTr128  =  DownConvBnElu(x=_DownTr64, in_filters=64,  data_format=data_format)  
+	#>>>>>> <tf.Tensor 'elu_31/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
     _DownTr128  =  SingleAndDoubleResidualBlock(x=_DownTr128,  data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_2/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
     _DownTr128  =  Squeeze_Excite_block(x=_DownTr128, ratio=8, data_format=data_format)
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_3/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
     _DownTr128Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr128)
 
-    #DownTr256   16 x 16 x 16 x 128 ==> 8 x 8 x 8 x 256
+    #DownTr256   D/8 x H/8 x W/8 x 128 ==> D/16 x H/16 x W/16 x 256
+	#>>>>>> <tf.Tensor 'elu_32/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
     _DownTr256  =  DownConvBnElu(x=_DownTr128, in_filters=128,  data_format=data_format)  
+	#>>>>>> <tf.Tensor 'elu_42/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
     _DownTr256  =  SingleAndDoubleResidualBlock(x=_DownTr256, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_3/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
     _DownTr256  =  Squeeze_Excite_block(x=_DownTr256, ratio=8, data_format=data_format)       
 
 
     ########## Dncode path ##########
-    #UpTr256    8 x 8 x 8 x 256 ==> 16 x 16 x 16 x 128 => 16 x 16 x 16 x 256 (due to concatenation)
+    #UpTr256    D/16 x H/16 x W/16 x 256 ==> D/8 x H/8 x W/8 x 128 => D/8 x H/8 x W/8 x 256 (due to concatenation)
+	#>>>>>> <tf.Tensor 'elu_43/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
     _UpTr256  = UpConvBnElu(_DownTr256, in_filters=256, data_format=data_format)
-    _UpTr256  = Concatenate()([_UpTr256,_DownTr128Dropout], axis = getBNAxis(data_format))
+	#>>>>>> <tf.Tensor 'concatenate/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
+    _UpTr256  = Concatenate(axis = getBNAxis(data_format))([_UpTr256,_DownTr128Dropout])
+	#>>>>>> <tf.Tensor 'elu_53/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
     _UpTr256  =  SingleAndDoubleResidualBlock(x=_UpTr256, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_4/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
     _UpTr256  =  Squeeze_Excite_block(x=_UpTr256, ratio=8, data_format=data_format)
-    #Also Dsv4 16 x 16 x 16 x 256 ==> 128 x 128 x 128 x 4
-    _Dsv4 = DeepSupervision(_UpTr256, filters=4, upSamplingRatio=128//16, data_format=data_format)
+    #Also Dsv4 D/8 x H/8 x W/8 x 256 => D x H x W x 4
+	#>>>>>> <tf.Tensor 'up_sampling3d/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+    _Dsv4 = DeepSupervision(_UpTr256, filters=4, upSamplingRatio=8, data_format=data_format)
 
 
-    #UpTr128    16 x 16 x 16 x 256 ==> 32 x 32 x 32 x 64 => 32 x 32 x 32 x 128 (due to concatenation)
+    #UpTr128    D/8 x H/8 x W/8 x 256 ==> D/4 x H/4 x W/4 x 64 => D/4 x H/4 x W/4 x 128 (due to concatenation)
+	#>>>>>> <tf.Tensor 'elu_54/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
     _UpTr128  = UpConvBnElu(_UpTr256, in_filters=128, data_format=data_format)
-    _UpTr128  = Concatenate()([_UpTr128,_DownTr64Dropout], axis = getBNAxis(data_format))
+	#>>>>>> <tf.Tensor 'concatenate_1/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
+    _UpTr128  = Concatenate(axis = getBNAxis(data_format))([_UpTr128,_DownTr64Dropout])
+	#>>>>>> <tf.Tensor 'elu_64/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
     _UpTr128  =  SingleAndDoubleResidualBlock(x=_UpTr128, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_5/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
     _UpTr128  =  Squeeze_Excite_block(x=_UpTr128, ratio=8, data_format=data_format)
-    #Also Dsv3 32 x 32 x 32 x 128 ==> 128 x 128 x 128 x 4
-    _Dsv3 = DeepSupervision(_UpTr128, filters=4, upSamplingRatio=128//32, data_format=data_format)
+    #Also Dsv3 D/4 x H/4 x W/4 x 128 => D x H x W x 4
+	#>>>>>> <tf.Tensor 'up_sampling3d_1/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+    _Dsv3 = DeepSupervision(_UpTr128, filters=4, upSamplingRatio=4, data_format=data_format)
 
-    #UpTr64    32 x 32 x 32 x 128 ==> 64 x 64 x 64 x 32 => 64 x 64 x 64 x 64 (due to concatenation)
+    #UpTr64    D/4 x H/4 x W/4 x 128 ==> D/2 x H/2 x W/2 x 32 => D/2 x H/2 x W/2 x 64 (due to concatenation)
+	#>>>>>> <tf.Tensor 'elu_65/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
     _UpTr64  = UpConvBnElu(_UpTr128, in_filters=64, data_format=data_format)
-    _UpTr64  = Concatenate()([_UpTr64,_DownTr32Dropout], axis = getBNAxis(data_format))
+	#>>>>>> <tf.Tensor 'concatenate_2/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
+    _UpTr64  = Concatenate(axis = getBNAxis(data_format))([_UpTr64,_DownTr32Dropout])
+	#>>>>>> <tf.Tensor 'elu_75/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
     _UpTr64  =  SingleAndDoubleResidualBlock(x=_UpTr64, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_6/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
     _UpTr64  =  Squeeze_Excite_block(x=_UpTr64, ratio=8, data_format=data_format)
-    #Also Dsv2 64 x 64 x 64 x 64 ==> 128 x 128 x 128 x 4
-    _Dsv2 = DeepSupervision(_UpTr64, filters=4, upSamplingRatio=128//64, data_format=data_format)
+    #Also Dsv2 D/2 x H/2 x W/2 x 64 => D x H x W x 4
+	#>>>>>> <tf.Tensor 'up_sampling3d_2/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+    _Dsv2 = DeepSupervision(_UpTr64, filters=4, upSamplingRatio=2, data_format=data_format)
 
-    #UpTr32    64 x 64 x 64 x 64 ==> 128 x 128 x 128 x 16 => 128 x 128 x 128 x 32 (due to concatenation)
-    _UpTr32  = UpConvBnElu(_UpTr128, in_filters=32, data_format=data_format)
-    _UpTr32  = Concatenate()([_UpTr32,_InTrDropout], axis = getBNAxis(data_format))
+    #UpTr32    D/2 x H/2 x W/2 x 64 ==> D x H x W x 16 => D x H x W x 32 (due to concatenation)
+	#>>>>>> <tf.Tensor 'elu_76/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+    _UpTr32  = UpConvBnElu(_UpTr64, in_filters=32, data_format=data_format)
+	#>>>>>> <tf.Tensor 'concatenate_3/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
+    _UpTr32  = Concatenate(axis = getBNAxis(data_format))([_UpTr32,_InTrDropout])
+	#>>>>>> <tf.Tensor 'elu_79/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
     _UpTr32  =   UpperLayerSingleResidualBlock(x=_UpTr32, data_format=data_format)
+	#>>>>>> <tf.Tensor 'elu_82/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
     _UpTr32  =   UpperLayerSingleResidualBlock(x=_UpTr32, data_format=data_format)
+	#>>>>>> <tf.Tensor 'multiply_7/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
     _UpTr32  =  Squeeze_Excite_block(x=_UpTr32, ratio=8, data_format=data_format)
-    #Also Dsv1 128 x 128 x 128 x 32 ==> 128 x 128 x 128 x 4
-    _Dsv1 = DeepSupervision(_UpTr32, filters=4, upSamplingRatio=128//128, data_format=data_format)
+    #Also Dsv1 D x H x W x 32 => D x H x W x 4
+	#>>>>>> <tf.Tensor 'up_sampling3d_3/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+    _Dsv1 = DeepSupervision(_UpTr32, filters=4, upSamplingRatio=1, data_format=data_format)
 
     #Final concatenation and convolution
     #128 x 128 x 128 x 4 ==> 128 x 128 x 128 x 16
-    _DsvConcat = Concatenate()([_Dsv1, _Dsv2, _Dsv3, _Dsv4], axis = getBNAxis(data_format))
+	#>>>>>> <tf.Tensor 'concatenate_4/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+    _DsvConcat = Concatenate(axis = getBNAxis(data_format))([_Dsv1, _Dsv2, _Dsv3, _Dsv4])
     #128 x 128 x 128 x 1 ==> 128 x 128 x 128 x 1
+	#>>>>>> <tf.Tensor 'conv3d_66/Identity:0' shape=(None, 16, 144, 144, 1) dtype=float32>
     _Final = Conv3D(filters = 1, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', data_format=data_format, use_bias = False)(_DsvConcat)
 
     # model instantiation
     model = Model(img_input, _Final)
     return model
+
 
 ############### Model train and test function #################
 def train(trainConfigFilePath):
@@ -619,7 +672,9 @@ def train(trainConfigFilePath):
     
     #Original
     # determine number of available GPUs and CPUs
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    # Not working in TF2
+    #gpus = tf.config.experimental.list_physical_devices('GPU') 
+    gpus = tf.config.list_physical_devices('GPU') 
     num_gpus = len(gpus)    
     print('Number of GPUs used for training: ', num_gpus)
     # prevent tensorflow from allocating all available GPU memory
@@ -657,7 +712,7 @@ def train(trainConfigFilePath):
     train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
                                         data_format=trainInputParams['data_format'],
                                         useDataAugmentationDuringTraining = True,
-                                        batch_size = 2,
+                                        batch_size = 1,
                                         cvFoldIndex = 0, #Can be between 0 to 4
                                         isValidationFlag = False
                                                 )
@@ -665,7 +720,7 @@ def train(trainConfigFilePath):
     test_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
                                         data_format=trainInputParams['data_format'],
                                         useDataAugmentationDuringTraining = False, #No augmentation during validation
-                                        batch_size = 2,
+                                        batch_size = 1,
                                         cvFoldIndex = 0, #Can be between 0 to 4
                                         isValidationFlag = True
                                         )
@@ -694,7 +749,7 @@ def train(trainConfigFilePath):
     if os.path.exists(trainInputParams["lastSavedModel"]):
         #from tensorflow.keras.models import load_model        
         #model = load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
-        model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
+        model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
         print('Loaded model: ' + trainInputParams["lastSavedModel"])
     else:
         model = DSSE_VNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              

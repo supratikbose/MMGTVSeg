@@ -264,8 +264,8 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
     print('generateNFoldCVnput Finshed.')
     return
 
-createSplitFiles('input/trainInput_DSSENet.json',  verbose=False)
-generateNFoldCVnput('input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
+createSplitFiles('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',  verbose=False)
+generateNFoldCVnput('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
 
 # with open('input/trainInput_DSSENet.json') as fp:
 #         previousConfig = json.load(fp)
