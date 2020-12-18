@@ -643,7 +643,7 @@ def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     _DsvConcat = Concatenate(axis = getBNAxis(data_format))([_Dsv1, _Dsv2, _Dsv3, _Dsv4])
     #128 x 128 x 128 x 1 ==> 128 x 128 x 128 x 1
 	#>>>>>> <tf.Tensor 'conv3d_66/Identity:0' shape=(None, 16, 144, 144, 1) dtype=float32>
-    _Final = Conv3D(filters = 1, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', data_format=data_format, use_bias = False)(_DsvConcat)
+    _Final = Conv3D(filters = 1, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', activation='sigmoid', data_format=data_format, use_bias = False)(_DsvConcat)
 
     # model instantiation
     model = Model(img_input, _Final)
@@ -765,19 +765,19 @@ def train(trainConfigFilePath):
     #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
     tb_logdir = './logs/' + os.path.basename(trainInputParams["lastSavedModel"]) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
     train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
-                tf.keras.callbacks.ModelCheckpoint(trainInputParams["lastSavedModel"], monitor = "loss", save_best_only = True, mode='min')]
-#                callbacks.evaluate_validation_data_callback(test_images[0,:], test_labels[0,:], image_size_cropped=trainInputParams['image_cropped_size'], 
-#                    resolution = trainInputParams['spacing'], save_to_nii=True) ]
+                tf.keras.callbacks.ModelCheckpoint(trainInputParams["lastSavedModel"], 
+                monitor = "loss", save_best_only = True, mode='min')]
+
 
     model.fit_generator(train_sequence,
-                        steps_per_epoch = num_train_cases // trainInputParams['batch_size'],
+                        steps_per_epoch = num_train_cases,
                         max_queue_size = 40,
                         epochs = trainInputParams['num_training_epochs'],
                         validation_data = test_sequence,
-                        validation_steps = 1,
+                        validation_steps = num_test_cases,
                         callbacks = train_callbacks,
                         use_multiprocessing = True,
                         workers = num_cpus, 
                         shuffle = True)
 
-    model.save(trainInputParams['fname'] + '_final')
+    model.save(trainInputParams['lastSavedModel'] + '_final')
