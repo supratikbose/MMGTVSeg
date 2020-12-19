@@ -76,7 +76,12 @@ def modified_dice_loss(y_true, y_pred):
 def modified_dice_loss_fg(y_true, y_pred):
     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True)
     return f
-
+def dice_coef_jaccard(y_true, y_pred):
+    smooth = 0.00001
+    y_true_f = K.flatten(y_true)
+    y_pred_f = K.flatten(y_pred)
+    intersection = K.sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (K.sum(y_true_f * y_true_f) + K.sum(y_pred_f * y_pred_f) + smooth)
 #################   Metrics ##############
 def surface_distance_array(test_labels, gt_labels, sampling=1, connectivity=1):
     input_1 = np.atleast_1d(test_labels.astype(np.bool))
@@ -301,11 +306,11 @@ class DSSENet_Generator(Sequence):
         # keras sequence returns a batch of datasets, not a single case like generator
         #Note that _getitem__() gets called __len__() number of times, passing idx in range 0 <= idx < __len__()
         batch_X = np.zeros(shape = tuple([self.batch_size] + self.X_size), dtype = np.float32)
-        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.int16)
+        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.float32) #np.int16
         returnNow = False
         for i in range(0, self.batch_size):  
             X = np.zeros(shape = tuple(self.X_size), dtype = np.float32)
-            y = np.zeros(shape = tuple(self.y_size), dtype = np.int16)         
+            y = np.zeros(shape = tuple(self.y_size), dtype = np.float32) #np.int16        
             # load case from disk
             overallIndex = idx * self.batch_size + i
             fileIndex = overallIndex 
@@ -362,7 +367,7 @@ class DSSENet_Generator(Sequence):
             ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
             ptData = ptData.astype(np.float32)
             #For gtv mask make it integer
-            gtvData = gtvData.astype(np.int16)
+            gtvData = gtvData.astype(np.float32) #int16
 
             #Apply Data augmentation
             if self.useDataAugmentationDuringTraining:
@@ -712,7 +717,7 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
         f.close()
 
     trainInputParams['loss_func'] = dice_loss
-    trainInputParams['acc_func'] = metrics.categorical_accuracy
+    trainInputParams['acc_func'] = dice_coef_jaccard #metrics.categorical_accuracy
     trainInputParams['group_normalization'] = False
     trainInputParams['activation_type'] = 'relu'
     trainInputParams['final_activation_type'] = 'softmax'
