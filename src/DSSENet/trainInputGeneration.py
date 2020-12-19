@@ -1,3 +1,5 @@
+############# NOT BEING USED ANYMORE ###########
+################################################
 #training and cross validation input generation
 import os
 import json

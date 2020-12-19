@@ -187,9 +187,10 @@ class DSSENet_Generator(Sequence):
                 data_format='channels_last',
                 useDataAugmentationDuringTraining = True, #True for training, not true for CV  specially if we want to merge prediction
                 batch_size = 1,
-                cvFoldIndex = 0, #Can be between 0 to 4
-                isValidationFlag = False # True for validation
-                ):
+                numCVFolds = 5,
+                cvFoldIndex = 0, #Can be between 0 to numCVFolds -1
+                isValidationFlag = False, # True for validation
+                verbose = False):
         # Read config file
         with open(trainConfigFilePath) as fp:
                 self.trainConfig = json.load(fp)
@@ -197,45 +198,97 @@ class DSSENet_Generator(Sequence):
         self.data_format = data_format
         self.useDataAugmentationDuringTraining = useDataAugmentationDuringTraining
         self.batch_size = batch_size
+        self.numCVFolds = numCVFolds
         self.cvFoldIndex = cvFoldIndex
         self.isValidationFlag = isValidationFlag
-
-        self.patientVol_width = self.trainConfig["patientVol_width"]
-        self.patientVol_Height = self.trainConfig["patientVol_Height"]
-        self.patientVol_Depth = self.trainConfig["patientVol_Depth"]
-        self.sampleInput_Depth = self.trainConfig["sampleInput_Depth"]
-        self.splitFilesLocation = self.trainConfig["splitFilesLocation"]
-        self.numDepthSplits = self.trainConfig["numDepthSplits"]
-        self.prefixList = self.trainConfig["prefixList"]
-        assert(self.numDepthSplits == len(self.prefixList))
-        self.suffixList = self.trainConfig['suffixList'] 
-        if self.isValidationFlag:
-            foldKey = 'cv_{:>03d}_Patients'.format(cvFoldIndex)
+        self.verbose = verbose
+        
+        #Read individual members of trainConfig <-- Is it needed?
+        
+        self.AllPatientList = [(os.path.basename(f)).replace('_ct.nii.gz','') \
+                for f in glob.glob(self.trainConfig["resampledFilesLocation"] + '/*_ct.nii.gz', recursive=False) ]
+        #DO NOT Ranomize patient list as we want to call the same generator for different CV index
+        # and do not want to shuffle patient list between different calls
+        #######random.shuffle(self.AllPatientList)   
+        
+        #Based on numCVFolds, CV index and whether this is a training set generator of validation generator
+        #determine list of patient names to be used in this data generator
+        self.numAllPatients = len(self.AllPatientList)
+        self.numCVPatients = self.numAllPatients // self.numCVFolds
+        self.numTrainPatients = self.numAllPatients - self.numCVPatients
+        
+        #Assert cvFoldIndex = 0, #Can be between 0 to numCVFolds -1
+        assert(self.cvFoldIndex >= 0 and self.cvFoldIndex < self.numCVFolds -1)
+        startIdx_cv = self.cvFoldIndex * self.numCVPatients
+        endIdx_cv = (self.cvFoldIndex+1) * self.numCVPatients
+        self.list_cvIdx = [*range(startIdx_cv, endIdx_cv)]
+        self.list_trainIdx =  [*range(0, startIdx_cv)] + [*range(endIdx_cv, self.numAllPatients)]
+        self.cVPatients = [self.AllPatientList[i] for i in self.list_cvIdx]
+        self.trainPatients = [self.AllPatientList[i] for i in self.list_trainIdx]
+        
+        #Is current one a trainData generator or a validation data generator
+        if isValidationFlag:
+            self.patientNames =  self.cVPatients 
         else:
-            foldKey = 'train_{:>03d}_Patients'.format(cvFoldIndex)
-        self.patientNames =  self.trainConfig[foldKey] 
-        self.num_cases = self.numDepthSplits * len(self.patientNames)
-
-        self.labels_to_train = self.trainConfig["labels_to_train"]
-        self.label_names = self.trainConfig["label_names"]
-        self.lr_flip = self.trainConfig["lr_flip"]
-        self.label_symmetry_map = self.trainConfig["label_symmetry_map"]
-        self.translate_random = self.trainConfig["translate_random"]
-        self.rotate_random = self.trainConfig["rotate_random"]
-        self.scale_random = self.trainConfig["scale_random"]
-        self.change_intensity = self.trainConfig["change_intensity"]
-        self.ct_low = self.trainConfig["ct_low"]        
-        self.ct_high = self.trainConfig["ct_high"]
-        self.pt_low = self.trainConfig["pt_low"]
-        self.pt_high = self.trainConfig["pt_high"]
-
-        self.cube_size = [self.sampleInput_Depth, self.patientVol_Height, self.patientVol_width]
+            self.patientNames =  self.trainPatients 
+        self.num_cases = len(self.patientNames)
+            
+        #The cubes are going to be arranged as depth-index, rowIndex, col-Index    
+        self.cube_size = [self.trainConfig["patientVol_Depth"], self.trainConfig["patientVol_Height"], self.trainConfig["patientVol_width"]]
+        self.DepthRange = slice(0, self.cube_size[0])
+        self.RowRange = slice(0, self.cube_size[1])
+        self.ColRange = slice(0, self.cube_size[1])
         if 'channels_last' == self.data_format:
             self.X_size = self.cube_size+[2] # 2 channel CT and PET
             self.y_size = self.cube_size+[1] # 1 channel output
         else: # 'channels_first'
             self.X_size = [2] + self.cube_size # 2 channel CT and PET
             self.y_size = [1] + self.cube_size # 1 channel output
+
+        if self.verbose:
+            print('trainConfigFilePath: ', trainConfigFilePath)
+            print('data_format: ', self.data_format)
+            print('useDataAugmentationDuringTraining: ', self.useDataAugmentationDuringTraining)
+            print('batch_size: ', self.batch_size)
+            print('numCVFolds: ', self.numCVFolds)
+            print('cvFoldIndex: ', self.cvFoldIndex)
+            print('isValidationFlag: ', self.isValidationFlag)            
+            print('labels_to_train: ', self.trainConfig["labels_to_train"])
+            print('label_names: ', self.trainConfig["label_names"])
+            print('lr_flip: ', self.trainConfig["lr_flip"])
+            print('label_symmetry_map: ', self.trainConfig["label_names"])
+            print('translate_random: ', self.trainConfig["translate_random"])
+            print('rotate_random: ', self.trainConfig["rotate_random"])
+            print('scale_random: ', self.trainConfig["scale_random"])
+            print('change_intensity: ', self.trainConfig["change_intensity"])            
+            print('ct_low: ', self.trainConfig["ct_low"])
+            print('ct_high: ', self.trainConfig["ct_high"])
+            print('pt_low: ', self.trainConfig["pt_low"])
+            print('pt_high: ', self.trainConfig["pt_high"])
+            print('resampledFilesLocation: ', self.trainConfig["resampledFilesLocation"])
+            print('suffixList: ', self.trainConfig["suffixList"])
+            print('patientVol_width: ', self.trainConfig["patientVol_width"])
+            print('patientVol_Height: ', self.trainConfig["patientVol_Height"])
+            print('change_intensity: ', self.trainConfig["patientVol_Depth"])            
+            print('AllPatientList: ', self.AllPatientList)        
+            print('numAllPatients: ', self.numAllPatients)
+            print('numCVPatients: ', self.numCVPatients)
+            print('numTrainPatients: ', self.numTrainPatients)
+            print('list_cvIdx: ', self.list_cvIdx)
+            print('list_trainIdx: ', self.list_trainIdx)
+            print('cVPatients: ', self.cVPatients)
+            print('trainPatients: ', self.trainPatients)
+            if isValidationFlag:
+                print('Using VALIDATION SET: ', self.patientNames)
+                print('num_validation_cases: ', self.num_cases)
+            else:
+                print('sing TRAINING SET: ', self.patientNames)
+                print('num_training_cases: ', self.num_cases)
+            print('DepthRange: ', self.DepthRange)
+            print('RowRange: ', self.RowRange)
+            print('ColRange: ', self.ColRange)
+            
+
     
     def __len__(self):
         #Note here, in this implementation data augmentation is not actually increasing 
@@ -255,44 +308,57 @@ class DSSENet_Generator(Sequence):
             y = np.zeros(shape = tuple(self.y_size), dtype = np.int16)         
             # load case from disk
             overallIndex = idx * self.batch_size + i
-            fileIndex = overallIndex // self.numDepthSplits
-            splitIndex = overallIndex % self.numDepthSplits
+            fileIndex = overallIndex 
 
-            ctFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[0]
-            ptFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[1]
-            gtvFileName = self.prefixList[splitIndex] + '_' + self.patientNames[fileIndex] + self.suffixList[2]
+            ctFileName = self.patientNames[fileIndex] + self.trainConfig["suffixList"][0]
+            ptFileName = self.patientNames[fileIndex] + self.trainConfig["suffixList"][1]
+            gtvFileName = self.patientNames[fileIndex] + self.trainConfig["suffixList"][2]
                         
             #check file existence            
-            if os.path.exists(os.path.join(self.splitFilesLocation, ctFileName)):
+            if os.path.exists(os.path.join(self.trainConfig["resampledFilesLocation"], ctFileName)):
                 pass
             else:
-                print(os.path.join(self.splitFilesLocation, ctFileName), ' does not exist')  
+                print(os.path.join(self.trainConfig["resampledFilesLocation"], ctFileName), ' does not exist')  
                 returnNow = True  
-            if os.path.exists(os.path.join(self.splitFilesLocation, ptFileName)):
+            if os.path.exists(os.path.join(self.trainConfig["resampledFilesLocation"], ptFileName)):
                 pass
             else:
-                print(os.path.join(self.splitFilesLocation, ptFileName), ' does not exist')  
+                print(os.path.join(self.trainConfig["resampledFilesLocation"], ptFileName), ' does not exist')  
                 returnNow = True
-            if os.path.exists(os.path.join(self.splitFilesLocation, gtvFileName)):
+            if os.path.exists(os.path.join(self.trainConfig["resampledFilesLocation"], gtvFileName)):
                 pass
             else:
-                print(os.path.join(self.splitFilesLocation, gtvFileName), ' does not exist')  
+                print(os.path.join(self.trainConfig["resampledFilesLocation"], gtvFileName), ' does not exist')  
                 returnNow = True
 
             if returnNow:
                 sys.exit() # return batch_X, batch_y, False, 0, 0, 0, 0, 0, 0
 
             #We are here => returnNow = False
-            ctData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ctFileName)).get_fdata(), axes=(2,1,0)) #axes: depth, height, width            
-            ptData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, ptFileName)).get_fdata(), axes=(2,1,0)) 
-            gtvData = np.transpose(nib.load(os.path.join(self.splitFilesLocation, gtvFileName)).get_fdata(), axes=(2,1,0))            
+            ctData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], ctFileName)).get_fdata(), axes=(2,1,0)) #axes: depth, height, width            
+            ptData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], ptFileName)).get_fdata(), axes=(2,1,0)) 
+            gtvData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], gtvFileName)).get_fdata(), axes=(2,1,0))   
+            
+            #Debug code
+            if self.verbose:
+               minCT = ctData.min()
+               maxCT = ctData.max()                 
+               minPT = ptData.min()
+               maxPT = ptData.max()
+               minGTV = gtvData.min()
+               maxGTV = gtvData.max()         
+               print('BatchId ', idx, ' sampleInBatchId ', i, ' ', ctFileName, ' ', ptFileName, ' ', gtvFileName, )
+               print('ctData shape-type-min-max: ', ctData.shape, ' ', ctData.dtype, ' ', minCT, ' ', maxCT)
+               print('ptData shape-type-min-max: ', ptData.shape, ' ', ptData.dtype, ' ', minPT, ' ', maxPT)
+               print('gtvtData shape-type-min-max: ', gtvData.shape, ' ', gtvData.dtype, ' ', minGTV, ' ', maxGTV)  
+               print('########################################################################')
             
             #Clamp and normalize CT data <- simple normalization, just divide by 1000
-            np.clip(ctData, self.ct_low, self.ct_high, out= ctData)
+            np.clip(ctData, self.trainConfig["ct_low"], self.trainConfig["ct_high"], out= ctData)
             ctData = ctData / 1000.0 #<-- This will put values between -1 and 3.1
             ctData = ctData.astype(np.float32)        
             #Clamp and normalize PET Data
-            np.clip(ptData, self.pt_low, self.pt_high, out= ptData)
+            np.clip(ptData, self.trainConfig["pt_low"], self.trainConfig["pt_high"], out= ptData)
             ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
             ptData = ptData.astype(np.float32)
             #For gtv mask make it integer
@@ -301,19 +367,20 @@ class DSSENet_Generator(Sequence):
             #Apply Data augmentation
             if self.useDataAugmentationDuringTraining:
                 # translate, scale, and rotate volume
-                if self.translate_random > 0 or self.rotate_random > 0 or self.scale_random > 0:
-                    ctData, ptData, gtvData = self.random_transform(ctData, ptData, gtvData, self.rotate_random, self.scale_random, self.translate_random, fast_mode=True)
+                if self.trainConfig["translate_random"] > 0 or self.trainConfig["rotate_random"] > 0 or self.trainConfig["scale_random"] > 0:
+                    ctData, ptData, gtvData = self.random_transform(ctData, ptData, gtvData, self.trainConfig["rotate_random"], self.trainConfig["scale_random"], self.trainConfig["translate_random"], fast_mode=True)
                 # No flipping or intensity modification
 
             #Concatenate CT and PET data  in X and put X  in batch_X; Put GTV in Y and Y in batch_Y
             if 'channels_last' == self.data_format:
-                X[:,:,:,0] = ctData
-                X[:,:,:,1] = ptData
-                y[:,:,:,0] = gtvData
+                #Some of the files have extra slices so we fix the range
+                X[:,:,:,0] = ctData[self.DepthRange, self.RowRange, self.ColRange]
+                X[:,:,:,1] = ptData[self.DepthRange, self.RowRange, self.ColRange]
+                y[:,:,:,0] = gtvData[self.DepthRange, self.RowRange, self.ColRange]
             else:
-                X[0,:,:,:] = ctData
-                X[1,:,:,:] = ptData
-                y[0,:,:,:] = gtvData
+                X[0,:,:,:] = ctData[self.DepthRange, self.RowRange, self.ColRange]
+                X[1,:,:,:] = ptData[self.DepthRange, self.RowRange, self.ColRange]
+                y[0,:,:,:] = gtvData[self.DepthRange, self.RowRange, self.ColRange]
             
             batch_X[i,:,:,:,:] = X
             batch_y[i,:,:,:,:] = y
@@ -353,55 +420,42 @@ class DSSENet_Generator(Sequence):
         return (img1, img2, label)   
 
 import matplotlib.pyplot as plt
-def displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec = 0.5):
+def displayBatchData(batchX, batchY, sampleInBatchId = 0, startSliceId = 26, endSliceId = 31, data_format='channels_last',pauseTime_sec = 0.5):
     numSamplesInBatch = batchX.shape[0]
     depth = batchX.shape[1] if 'channels_last' == data_format else batchX.shape[2]
-    for sampleId in range(0,numSamplesInBatch):
-        plt.figure(sampleId+1)
-        for sliceId in range(0,depth):
-            #Display CT        
-            plt.subplot(3, depth, sliceId+1)
-            plt.axis('off')
-            plt.title('CT_'+str(sliceId), fontsize=8) 
-            if 'channels_last' == data_format:
-                plt.imshow(batchX[sampleId, sliceId,:, :, 0])
-            else: # 'channel_first'
-                plt.imshow(batchX[sampleId, 0, sliceId,:, :])
-            #Display PET        
-            plt.subplot(3, depth, depth + sliceId+1)
-            plt.axis('off')
-            plt.title('PT_'+str(sliceId), fontsize=8)
-            if 'channels_last' == data_format:
-                plt.imshow(batchX[sampleId, sliceId,:, :, 1])
-            else: # 'channel_first'
-                plt.imshow(batchX[sampleId, 1, sliceId,:, :])
-            #Display GTV        
-            plt.subplot(3, depth, 2*depth + sliceId+1)
-            plt.axis('off')
-            plt.title('GTV_'+str(sliceId), fontsize=8)
-            if 'channels_last' == data_format:
-                plt.imshow(batchY[sampleId, sliceId,:, :, 0])
-            else: # 'channel_first'
-                plt.imshow(batchY[sampleId, 0, sliceId,:, :])
-        plt.show()
-        plt.pause(pauseTime_sec)
+    numSlicesToDisplay = endSliceId - startSliceId + 1
+    plt.figure(1)#sampleInBatchId+1
+    for sliceId in range(startSliceId, endSliceId):
+        offset = sliceId - startSliceId
+        #Display CT        
+        plt.subplot(3, numSlicesToDisplay, offset+1)
+        plt.axis('off')
+        plt.title('CT_'+str(sliceId), fontsize=8) 
+        if 'channels_last' == data_format:
+            plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 0])
+        else: # 'channel_first'
+            plt.imshow(batchX[sampleInBatchId, 0, sliceId,:, :])
+        #Display PET        
+        plt.subplot(3, numSlicesToDisplay, numSlicesToDisplay + offset+1)
+        plt.axis('off')
+        plt.title('PT_'+str(sliceId), fontsize=8)
+        if 'channels_last' == data_format:
+            plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 1])
+        else: # 'channel_first'
+            plt.imshow(batchX[sampleInBatchId, 1, sliceId,:, :])
+        #Display GTV        
+        plt.subplot(3, numSlicesToDisplay, 2*numSlicesToDisplay + offset+1)
+        plt.axis('off')
+        plt.title('GTV_'+str(sliceId), fontsize=8)
+        if 'channels_last' == data_format:
+            plt.imshow(batchY[sampleInBatchId, sliceId,:, :, 0])
+        else: # 'channel_first'
+            plt.imshow(batchY[sampleInBatchId, 0, sliceId,:, :])
+    plt.show()
+    plt.pause(pauseTime_sec)
 
 
-#Test code
-# trainGenerator = DSSENet_Generator(
-#     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
-#     data_format='channels_last',
-#     useDataAugmentationDuringTraining = False,
-#     batch_size = 2,
-#     cvFoldIndex = 1, #Can be between 0 to 4
-#     isValidationFlag = False
-#     )
-# numBatches = trainGenerator.__len__()
-# batchX, batchY = trainGenerator.__getitem__(5)
-# displayBatchData(batchX, batchY, data_format='channels_last',pauseTime_sec = 0.5)
 
-# for idx in range(0,numBatches):
-#     batchX, batchY = trainGenerator.__getitem__(idx)         
 
 ################### DSSE_VNet ##################
 def shape(tensor):
@@ -516,7 +570,7 @@ def Squeeze_Excite_block(x, ratio=16, data_format='channels_last'):
 #  32 => 16  => 8   => 4   => 2
 # OR
 #  16 => 8  => 4   => 2   => 1
-def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
+def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
 
     ########## Encode path ##########       (using the terminology from Ref1)
     #InTr  D x H x W x C ==> D x H x W x 16
@@ -651,7 +705,7 @@ def DSSE_VNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
 
 
 ############### Model train and test function #################
-def train(trainConfigFilePath):
+def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False):
     # load trainInputParams  from JSON config files
     with open(trainConfigFilePath) as f:
         trainInputParams = json.load(f)
@@ -671,16 +725,28 @@ def train(trainConfigFilePath):
         trainInputParams['asymmetric'] = True
     
     #Original
-    # determine number of available GPUs and CPUs
-    # Not working in TF2
-    #gpus = tf.config.experimental.list_physical_devices('GPU') 
+    # determine number of available
     gpus = tf.config.list_physical_devices('GPU') 
     num_gpus = len(gpus)    
-    print('Number of GPUs used for training: ', num_gpus)
-    # prevent tensorflow from allocating all available GPU memory
-    if (num_gpus > 0):
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
+    print('Number of GPUs available  for training: ', num_gpus)
+    #If using CPUs only for training (set it true if getting GPU memory allocation error)
+    if True == cpuOnlyFlag:
+        #Hide GPUs
+        if num_gpus > 0: #gpus:
+            print("Restricting TensorFlow to use CPU only by hiding GPUs.")
+            try:
+                tf.config.experimental.set_visible_devices([], 'GPU')
+                logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+                print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
+            except RuntimeError as e:
+                # Visible devices must be set before GPUs have been initialized
+                print(e)       
+            pass
+    else:    
+        # prevent tensorflow from allocating all available GPU memory
+        if (num_gpus > 0):
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
 
     # #Limit GPU use to a single GPU as I am not sure whether that messed up tensorboard
     # # I earlier saw an error message about multiGPU and tensorboard
@@ -710,19 +776,23 @@ def train(trainConfigFilePath):
     
 
     train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                        data_format=trainInputParams['data_format'],
+                                        data_format=data_format,
                                         useDataAugmentationDuringTraining = True,
                                         batch_size = 1,
+                                        numCVFolds = 5,
                                         cvFoldIndex = 0, #Can be between 0 to 4
-                                        isValidationFlag = False
+                                        isValidationFlag = False,
+                                        verbose=False
                                                 )
 
     test_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                        data_format=trainInputParams['data_format'],
-                                        useDataAugmentationDuringTraining = False, #No augmentation during validation
+                                        data_format=data_format,
+                                        useDataAugmentationDuringTraining = False,
                                         batch_size = 1,
+                                        numCVFolds = 5,
                                         cvFoldIndex = 0, #Can be between 0 to 4
-                                        isValidationFlag = True
+                                        isValidationFlag = True,
+                                        verbose=False
                                         )
     
     # count number of training and test cases
@@ -733,8 +803,8 @@ def train(trainConfigFilePath):
     print('Number of test cases: ', num_test_cases)
     print("labels to train: ", trainInputParams['labels_to_train'])
     
-    sampleCube_dim = [trainInputParams["sampleInput_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
-    if 'channels_last' == trainInputParams['data_format']:
+    sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+    if 'channels_last' == data_format:
         input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
         output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
     else: # 'channels_first'
@@ -752,7 +822,7 @@ def train(trainConfigFilePath):
         model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
         print('Loaded model: ' + trainInputParams["lastSavedModel"])
     else:
-        model = DSSE_VNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
+        model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=data_format)                              
 
         optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
         if trainInputParams['AMP']:
@@ -776,7 +846,7 @@ def train(trainConfigFilePath):
                         validation_data = test_sequence,
                         validation_steps = num_test_cases,
                         callbacks = train_callbacks,
-                        use_multiprocessing = True,
+                        use_multiprocessing = False,
                         workers = num_cpus, 
                         shuffle = True)
 
