@@ -10,6 +10,7 @@ import random
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.utils import Sequence
+from datetime import datetime
 
 ################################### Test code related with split file and TrainInputJason generation #######################################
 
@@ -741,31 +742,112 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
 
 #Test code
 import sys
-import pprint
-pprint.pprint(sys.path)
-#pprint.pprint(sys.modules)
-import  DSSENet
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src import  DSSENet
 from DSSENet import DSSE_VNet
 
-trainGenerator = DSSE_VNet.DSSENet_Generator(
-    trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
-    data_format='channels_last',
-    useDataAugmentationDuringTraining = False,
-    batch_size = 1,
-    numCVFolds = 5,
-    cvFoldIndex = 1, #Can be between 0 to 4
-    isValidationFlag = False,
-    verbose=True
-    )
+# import pprint
+# pprint.pprint(sys.path)
+#pprint.pprint(sys.modules)
 
-numBatches = trainGenerator.__len__()
-batchX, batchY = trainGenerator.__getitem__(5)
-#DSSE_VNet.displayBatchData(batchX, batchY, sampleInBatchId = 0, 
+##################################################
+# trainGenerator = DSSE_VNet.DSSENet_Generator(
+#     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+#     data_format='channels_last',
+#     useDataAugmentationDuringTraining = False,
+#     batch_size = 1,
+#     numCVFolds = 5,
+#     cvFoldIndex = 1, #Can be between 0 to 4
+#     isValidationFlag = False,
+#     verbose=True
+#     )
+
+# numBatches = trainGenerator.__len__()
+# batchX, batchY = trainGenerator.__getitem__(5)
+# DSSE_VNet.displayBatchData(batchX, batchY, sampleInBatchId = 0, 
 #                           startSliceId = 10, 
 #                           endSliceId = 15, 
 #                           data_format='channels_last',pauseTime_sec = 0.5)
 
-#for idx in range(0,numBatches):
+# for idx in range(0,numBatches):
 #    batchX, batchY = trainGenerator.__getitem__(idx)    
+
+##################################################################
+# import tensorflow as tf
+# import tensorflow.keras.backend as K
+# from tensorflow.keras.models import Model
+# from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
+# from tensorflow.keras import regularizers, metrics
+# from tensorflow.keras.utils import Sequence
+# import tensorflow_addons as tfa
+
+# trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json'
+# cvFoldIndex = 0
+# with open(trainConfigFilePath) as f:
+#     trainInputParams = json.load(f)
+#     f.close()
+
+# thisFoldIntermediateModelFileName = "{:>02d}InterDSSENetModel.h5".format(cvFoldIndex)
+# thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
+# thisFoldIntermediateModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldIntermediateModelFileName)
+# thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+# print(thisFoldIntermediateModelPath)
+# print(thisFoldFinalModelPath)
+# tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+# print(tb_logdir)
+
+# ##### Check if you can load model that was saved into Tensorflow SavedModel #######
+# ##### format and write it back into h5 format ########
+
+# def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True):
+#     num_dim = len(K.int_shape(y_pred)) 
+#     num_labels = K.int_shape(y_pred)[-1]
+#     reduce_axis = list(range(1, num_dim - 1))
+#     y_true = y_true[..., 0]
+#     dice = 0.0
+
+#     if (ignore_zero_label == True):
+#         label_range = range(1, num_labels)
+#     else:
+#         label_range = range(0, num_labels)
+
+#     for i in label_range:
+#         y_pred_b = y_pred[..., i]
+#         y_true_b = K.cast(K.equal(y_true, i), K.dtype(y_pred))
+#         intersection = K.sum(y_true_b * y_pred_b, axis = reduce_axis)        
+#         if squared_denominator: 
+#             y_pred_b = K.square(y_pred_b)
+#         y_true_o = K.sum(y_true_b, axis = reduce_axis)
+#         y_pred_o =  K.sum(y_pred_b, axis = reduce_axis)     
+#         d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth) 
+#         dice = dice + K.mean(d)
+#     dice = dice / len(label_range)
+#     return dice
+
+# def dice_loss(y_true, y_pred):
+#     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False)
+#     return f
+
+# def dice_loss_fg(y_true, y_pred):
+#     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True)
+#     return f
+
+# def modified_dice_loss(y_true, y_pred):
+#     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False)
+#     return f
+
+# def modified_dice_loss_fg(y_true, y_pred):
+#     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True)
+#     return f
+# #########
+# model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+# print('Loaded model: ' + thisFoldFinalModelPath)
+# model.save('/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/00FinalDSSENetModel.h5',save_format='h5')
+# newModel = tf.keras.models.load_model('/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/00FinalDSSENetModel.h5', custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+# print('Loaded NEW model: ' + '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/00FinalDSSENetModel.h5')
+#############################################
+
+# #TODO Changes to be copied into VM (a) tb_logdir & (b) save_format = 'h5' in model.save() (c) In verbose modify the created models from savefile to h5 format.
 
 

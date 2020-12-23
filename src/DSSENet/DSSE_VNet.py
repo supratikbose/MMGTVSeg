@@ -840,7 +840,7 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
             
         # TODO: clean up the evaluation callback
         #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
-        tb_logdir = './logs/' + os.path.basename(thisFoldIntermediateModelPath) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+        tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
         train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
                              tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
                                     monitor = "loss", save_best_only = True, mode='min')]
@@ -866,4 +866,4 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
                             use_multiprocessing = False,
                             workers = num_cpus, 
                             shuffle = True)
-        model.save(thisFoldFinalModelPath)
+        model.save(thisFoldFinalModelPath,save_format='h5')

@@ -1,5 +1,5 @@
 {
-    "lastSavedModelFolder": "/data/home/wd974888/notebooks/MMGTVSeg/output/DSSEModels", 
+    "lastSavedModelFolder": "/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels", 
     "num_training_epochs": 50, 
 
     "labels_to_train": [1], 
@@ -15,7 +15,7 @@
     "pt_low": 0.0, 
     "pt_high": 25.0,    
 
-    "resampledFilesLocation": "/data/home/wd974888/notebooks/MMGTVSeg/data/hecktor_train/resampled",
+    "resampledFilesLocation": "/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_train/resampled",
     "suffixList": ["_ct.nii.gz", "_pt.nii.gz", "_ct_gtvt.nii.gz"], 
     "patientVol_width": 144, 
     "patientVol_Height": 144, 
