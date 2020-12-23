@@ -76,12 +76,7 @@ def modified_dice_loss(y_true, y_pred):
 def modified_dice_loss_fg(y_true, y_pred):
     f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True)
     return f
-def dice_coef_jaccard(y_true, y_pred):
-    smooth = 0.00001
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f * y_true_f) + K.sum(y_pred_f * y_pred_f) + smooth)
+
 #################   Metrics ##############
 def surface_distance_array(test_labels, gt_labels, sampling=1, connectivity=1):
     input_1 = np.atleast_1d(test_labels.astype(np.bool))
@@ -223,7 +218,7 @@ class DSSENet_Generator(Sequence):
         self.numTrainPatients = self.numAllPatients - self.numCVPatients
         
         #Assert cvFoldIndex = 0, #Can be between 0 to numCVFolds -1
-        assert(self.cvFoldIndex >= 0 and self.cvFoldIndex < self.numCVFolds -1)
+        assert(self.cvFoldIndex >= 0 and self.cvFoldIndex < self.numCVFolds)
         startIdx_cv = self.cvFoldIndex * self.numCVPatients
         endIdx_cv = (self.cvFoldIndex+1) * self.numCVPatients
         self.list_cvIdx = [*range(startIdx_cv, endIdx_cv)]
@@ -306,11 +301,11 @@ class DSSENet_Generator(Sequence):
         # keras sequence returns a batch of datasets, not a single case like generator
         #Note that _getitem__() gets called __len__() number of times, passing idx in range 0 <= idx < __len__()
         batch_X = np.zeros(shape = tuple([self.batch_size] + self.X_size), dtype = np.float32)
-        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.float32) #np.int16
+        batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.int16) #np.int16 #np.float32
         returnNow = False
         for i in range(0, self.batch_size):  
             X = np.zeros(shape = tuple(self.X_size), dtype = np.float32)
-            y = np.zeros(shape = tuple(self.y_size), dtype = np.float32) #np.int16        
+            y = np.zeros(shape = tuple(self.y_size), dtype = np.int16) #np.int16     #np.float32   
             # load case from disk
             overallIndex = idx * self.batch_size + i
             fileIndex = overallIndex 
@@ -367,7 +362,7 @@ class DSSENet_Generator(Sequence):
             ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
             ptData = ptData.astype(np.float32)
             #For gtv mask make it integer
-            gtvData = gtvData.astype(np.float32) #int16
+            gtvData = gtvData.astype(np.int16) #int16 #float32
 
             #Apply Data augmentation
             if self.useDataAugmentationDuringTraining:
@@ -702,7 +697,9 @@ def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     _DsvConcat = Concatenate(axis = getBNAxis(data_format))([_Dsv1, _Dsv2, _Dsv3, _Dsv4])
     #128 x 128 x 128 x 1 ==> 128 x 128 x 128 x 1
 	#>>>>>> <tf.Tensor 'conv3d_66/Identity:0' shape=(None, 16, 144, 144, 1) dtype=float32>
-    _Final = Conv3D(filters = 1, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', activation='sigmoid', data_format=data_format, use_bias = False)(_DsvConcat)
+    #We are going to use filters = 2 for two classes (0 and 1) and softmax as the activation
+    #And we will use categorical accuracy for metric and modified dice loss as loss
+    _Final = Conv3D(filters = 2, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', activation='softmax', data_format=data_format, use_bias = False)(_DsvConcat)
 
     # model instantiation
     model = Model(img_input, _Final)
@@ -716,8 +713,8 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
         trainInputParams = json.load(f)
         f.close()
 
-    trainInputParams['loss_func'] = dice_loss
-    trainInputParams['acc_func'] = dice_coef_jaccard #metrics.categorical_accuracy
+    trainInputParams['loss_func'] = modified_dice_loss
+    trainInputParams['acc_func'] = metrics.categorical_accuracy
     trainInputParams['group_normalization'] = False
     trainInputParams['activation_type'] = 'relu'
     trainInputParams['final_activation_type'] = 'softmax'
@@ -739,8 +736,10 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
         #Hide GPUs
         if num_gpus > 0: #gpus:
             print("Restricting TensorFlow to use CPU only by hiding GPUs.")
+            #print("Restricting TensorFlow to only use the first GPU.")
             try:
                 tf.config.experimental.set_visible_devices([], 'GPU')
+                #tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
                 logical_gpus = tf.config.experimental.list_logical_devices('GPU')
                 print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
             except RuntimeError as e:
@@ -753,21 +752,6 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
 
-    # #Limit GPU use to a single GPU as I am not sure whether that messed up tensorboard
-    # # I earlier saw an error message about multiGPU and tensorboard
-    # gpus = tf.config.experimental.list_physical_devices('GPU')
-    # num_gpus = len(gpus)    
-    # print('Number of GPUs AVAILABLE for training: ', num_gpus)
-    # if gpus:
-    #     print("Restricting TensorFlow to only use the first GPU.")
-    #     try:
-    #         tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
-    #         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-    #         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-    #     except RuntimeError as e:
-    #         # Visible devices must be set before GPUs have been initialized
-    #         print(e)
-
     num_cpus = min(os.cpu_count(), 24)   # don't use more than 16 CPU threads
     print('Number of CPUs used for training: ', num_cpus)
 
@@ -778,81 +762,108 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
 
     if (trainInputParams['XLA']):
         tf.config.optimizer.set_jit(True)
-    
 
-    train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                        data_format=data_format,
-                                        useDataAugmentationDuringTraining = True,
-                                        batch_size = 1,
-                                        numCVFolds = 5,
-                                        cvFoldIndex = 0, #Can be between 0 to 4
-                                        isValidationFlag = False,
-                                        verbose=False
-                                                )
-
-    test_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                        data_format=data_format,
-                                        useDataAugmentationDuringTraining = False,
-                                        batch_size = 1,
-                                        numCVFolds = 5,
-                                        cvFoldIndex = 0, #Can be between 0 to 4
-                                        isValidationFlag = True,
-                                        verbose=False
-                                        )
-    
-    # count number of training and test cases
-    num_train_cases = train_sequence.__len__()
-    num_test_cases = test_sequence.__len__()
-
-    print('Number of train cases: ', num_train_cases)
-    print('Number of test cases: ', num_test_cases)
-    print("labels to train: ", trainInputParams['labels_to_train'])
-    
-    sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
-    if 'channels_last' == data_format:
-        input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
-        output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
-    else: # 'channels_first'
-        input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
-        output_shape = tuple([1] + sampleCube_dim) # 1 channel output
-
-    # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
-    # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
-    # with strategy.scope():
-    
-    # load existing or create new model
-    if os.path.exists(trainInputParams["lastSavedModel"]):
-        #from tensorflow.keras.models import load_model        
-        #model = load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': loss.dice_loss_fg, 'modified_dice_loss': loss.modified_dice_loss})
-        model = tf.keras.models.load_model(trainInputParams['fname'], custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
-        print('Loaded model: ' + trainInputParams["lastSavedModel"])
+    #Make sure trainInputParams["lastSavedModelFolder"] exists and it is a directory
+    #If it does not exist, create it.
+    if os.path.exists(trainInputParams["lastSavedModelFolder"]):
+        #Check if it is a directory or not
+        if os.path.isfile(trainInputParams["lastSavedModelFolder"]): 
+            print('Error: ', trainInputParams["lastSavedModelFolder"],  ' points to a file. It should be a directory. Exisitng')
+            sys.exit()    
     else:
-        model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=data_format)                              
+        #create 
+        os.makedirs(trainInputParams["lastSavedModelFolder"])
+    #We are here - so trainInputParams["lastSavedModelFolder"] is a directory
 
-        optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
-        if trainInputParams['AMP']:
-            optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+    #Run CV Folds
+    numCVFolds = 5
+    for cvFoldIndex in range(0,numCVFolds):
 
-        model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'], metrics = [trainInputParams['acc_func']])
-        model.summary(line_length=140)
+        train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                            data_format=data_format,
+                                            useDataAugmentationDuringTraining = True,
+                                            batch_size = 1,
+                                            numCVFolds = numCVFolds,
+                                            cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
+                                            isValidationFlag = False,
+                                            verbose=False
+                                                    )
+
+        val_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                            data_format=data_format,
+                                            useDataAugmentationDuringTraining = False,
+                                            batch_size = 1,
+                                            numCVFolds = numCVFolds,
+                                            cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
+                                            isValidationFlag = True,
+                                            verbose=False
+                                            )
         
-    # TODO: clean up the evaluation callback
-    #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
-    tb_logdir = './logs/' + os.path.basename(trainInputParams["lastSavedModel"]) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
-                tf.keras.callbacks.ModelCheckpoint(trainInputParams["lastSavedModel"], 
-                monitor = "loss", save_best_only = True, mode='min')]
+        # count number of training and test cases
+        num_train_cases = train_sequence.__len__()
+        num_val_cases = val_sequence.__len__()
 
+        print('Number of train cases: ', num_train_cases)
+        print('Number of test cases: ', num_val_cases)
+        print("labels to train: ", trainInputParams['labels_to_train'])
+        
+        sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+        if 'channels_last' == data_format:
+            input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
+            output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
+        else: # 'channels_first'
+            input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
+            output_shape = tuple([1] + sampleCube_dim) # 1 channel output
 
-    model.fit_generator(train_sequence,
-                        steps_per_epoch = num_train_cases,
-                        max_queue_size = 40,
-                        epochs = trainInputParams['num_training_epochs'],
-                        validation_data = test_sequence,
-                        validation_steps = num_test_cases,
-                        callbacks = train_callbacks,
-                        use_multiprocessing = False,
-                        workers = num_cpus, 
-                        shuffle = True)
+        # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
+        # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+        # with strategy.scope():
+        
+        # load existing or create new model for this folder
+        thisFoldIntermediateModelFileName = "{:>02d}InterDSSENetModel.h5".format(cvFoldIndex)
+        thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
+        thisFoldIntermediateModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldIntermediateModelFileName)
+        thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+        print(thisFoldIntermediateModelPath)
+        print(thisFoldFinalModelPath)
 
-    model.save(trainInputParams['lastSavedModel'] + '_final')
+        if os.path.exists(thisFoldIntermediateModelPath):
+            model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+            print('Loaded model: ' + thisFoldIntermediateModelPath)
+        else:
+            model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=data_format)                              
+            optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+            if trainInputParams['AMP']:
+                optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+            model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'], metrics = [trainInputParams['acc_func']])
+            model.summary(line_length=140)
+            
+        # TODO: clean up the evaluation callback
+        #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
+        tb_logdir = './logs/' + os.path.basename(thisFoldIntermediateModelPath) + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+        train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
+                             tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
+                                    monitor = "loss", save_best_only = True, mode='min')]
+
+        # model.fit_generator(train_sequence,
+        #                     steps_per_epoch = num_train_cases,
+        #                     max_queue_size = 40,
+        #                     epochs = trainInputParams['num_training_epochs'],
+        #                     validation_data = val_sequence,
+        #                     validation_steps = num_val_cases,
+        #                     callbacks = train_callbacks,
+        #                     use_multiprocessing = False,
+        #                     workers = num_cpus, 
+        #                     shuffle = True)
+
+        model.fit(x=train_sequence,
+                            steps_per_epoch = num_train_cases,
+                            max_queue_size = 40,
+                            epochs = trainInputParams['num_training_epochs'],
+                            validation_data = val_sequence,
+                            validation_steps = num_val_cases,
+                            callbacks = train_callbacks,
+                            use_multiprocessing = False,
+                            workers = num_cpus, 
+                            shuffle = True)
+        model.save(thisFoldFinalModelPath)
