@@ -479,7 +479,6 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
 # class DSSENet_Generator(Sequence): 
 #     def __init__(self,
 #                 trainConfigFilePath,
-#                 data_format='channels_last',
 #                 useDataAugmentationDuringTraining = True, #True for training, not true for CV  specially if we want to merge prediction
 #                 batch_size = 1,
 #                 cvFoldIndex = 0, #Can be between 0 to 4
@@ -754,7 +753,6 @@ from DSSENet import DSSE_VNet
 ##################################################
 # trainGenerator = DSSE_VNet.DSSENet_Generator(
 #     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
-#     data_format='channels_last',
 #     useDataAugmentationDuringTraining = False,
 #     batch_size = 1,
 #     numCVFolds = 5,
@@ -848,6 +846,25 @@ from DSSENet import DSSE_VNet
 # print('Loaded NEW model: ' + '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/00FinalDSSENetModel.h5')
 #############################################
 
-# #TODO Changes to be copied into VM (a) tb_logdir & (b) save_format = 'h5' in model.save() (c) In verbose modify the created models from savefile to h5 format.
+##################################################
+DSSE_VNet.msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+                                numCVFolds = 5,
+                                cvFoldIndex = 0,
+                                savePredictions = True,
+                                out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+                                thisFoldFinalModelPath = "",
+                                verbose=False)
 
+####################################### 
+
+# TODO Changes to be copied into VM 
+# - tb_logdir in train() method
+# - save_format = 'h5' in model.save() in train() methof
+# - model.fit instead of model,fit_generator in train() method
+# - The data generator class with extended getitem method
+# - The dice_coef method with all its comments
+# - The msd_and_dice_cvFold method
+# - The DSSEVNet method with new comments
+# - dice_coef method is hardcoded for channel_last
+# - msd_and_dice_cvFold is also hardcoded for channel_last
 

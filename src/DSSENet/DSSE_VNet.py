@@ -34,9 +34,12 @@ from tensorflow.keras import regularizers, metrics
 from tensorflow.keras.utils import Sequence
 import tensorflow_addons as tfa
 
-######### Loss functions ##########
+import matplotlib.pyplot as plt
+import time
+
+######### Loss functions ########## 
 # mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
-def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True):
+def dice_coef(y_true, y_pred, smooth = 0.0001, squared_denominator = False, ignore_zero_label = True):
     num_dim = len(K.int_shape(y_pred)) 
     num_labels = K.int_shape(y_pred)[-1]
     reduce_axis = list(range(1, num_dim - 1))
@@ -62,20 +65,88 @@ def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ign
     return dice
 
 def dice_loss(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False)
+    f = 1 - dice_coef(y_true, y_pred, squared_denominator = False, ignore_zero_label = False)
     return f
 
 def dice_loss_fg(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True)
+    f = 1 - dice_coef(y_true, y_pred, squared_denominator = False, ignore_zero_label = True)
     return f
 
 def modified_dice_loss(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False)
+    f = 1 - dice_coef(y_true, y_pred, squared_denominator = True, ignore_zero_label = False)
     return f
 
 def modified_dice_loss_fg(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True)
+    f = 1 - dice_coef(y_true, y_pred, squared_denominator = True, ignore_zero_label = True)
     return f
+
+
+############### Temporarily commented out
+# mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
+# def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format = 'channels_last'):
+#     #For two labels shape=(None, 144, 144, 144, 2)
+#     num_dim = len(K.int_shape(y_pred)) #Should be 5
+#     if 'channels_last' == data_format:
+#         num_labels = K.int_shape(y_pred)[-1] #Should be 2        
+#     else:
+#         num_labels = K.int_shape(y_pred)[1] #Should be 2
+
+#     reduce_axis = list(range(1, num_dim - 1)) #should be [1, 2, 3]
+
+#     #... means as many : as needed 
+#     # Also  fixing channel index (here channel_last is assumed hard-coded) removes that dimension
+#     # So y_true : (None, 144, 144, 144, 1) --> (None, 144, 144, 144)
+#     y_true = y_true[..., 0] if 'channels_last' == data_format else  y_true[:, 0, ...]
+#     dice = 0.0
+
+#     if (ignore_zero_label == True):
+#         label_range = range(1, num_labels)
+#     else:
+#         label_range = range(0, num_labels)
+#     # In this case zero_label is not ignored and label_range = [0,1]
+#     for i in label_range:
+#         #For label 0, softmax output at channel 0 and for label 1, softmax output at channel 0
+#         #Once again shape of y_pred_b = (None, 144, 144, 144)
+#         y_pred_b = y_pred[..., i] if 'channels_last' == data_format else  y_pred[:, i, ...]
+#         # y_true_b is the mask corresponding to label = i, here 0 or 1
+#         # y_true_b is type casted to type of y_pred
+#         y_true_b = K.cast(K.equal(y_true, i), K.dtype(y_pred))
+#         intersection = K.sum(y_true_b * y_pred_b, axis = reduce_axis)        
+#         if squared_denominator: 
+#             y_pred_b = K.square(y_pred_b)
+#         y_true_o = K.sum(y_true_b, axis = reduce_axis)
+#         y_pred_o =  K.sum(y_pred_b, axis = reduce_axis)     
+#         d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth)
+#         #K.mean(d) is the dice for label=i, i = 0, 1 
+#         dice = dice + K.mean(d)
+#     dice = dice / len(label_range)
+#     return dice
+
+# def dice_loss(data_format = 'channels_last'):
+#     def loss(y_true, y_pred):
+#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False, data_format=data_format)
+#         return f    
+#     return loss
+
+# def dice_loss_fg(data_format = 'channels_last'):
+#     def loss(y_true, y_pred):
+#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format=data_format)
+#         return f
+#     return loss
+
+# def modified_dice_loss(data_format = 'channels_last'):
+#     def loss(y_true, y_pred):
+#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False, data_format=data_format)
+#         return f
+#     return loss
+
+# def modified_dice_loss_fg(data_format = 'channels_last'):
+#     def loss(y_true, y_pred):
+#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True, data_format=data_format)
+#         return f
+#     return loss
+
+
 
 #################   Metrics ##############
 def surface_distance_array(test_labels, gt_labels, sampling=1, connectivity=1):
@@ -184,7 +255,6 @@ def COM(label):
 class DSSENet_Generator(Sequence): 
     def __init__(self,
                 trainConfigFilePath,
-                data_format='channels_last',
                 useDataAugmentationDuringTraining = True, #True for training, not true for CV  specially if we want to merge prediction
                 batch_size = 1,
                 numCVFolds = 5,
@@ -195,7 +265,6 @@ class DSSENet_Generator(Sequence):
         with open(trainConfigFilePath) as fp:
                 self.trainConfig = json.load(fp)
                 fp.close() 
-        self.data_format = data_format
         self.useDataAugmentationDuringTraining = useDataAugmentationDuringTraining
         self.batch_size = batch_size
         self.numCVFolds = numCVFolds
@@ -238,7 +307,7 @@ class DSSENet_Generator(Sequence):
         self.DepthRange = slice(0, self.cube_size[0])
         self.RowRange = slice(0, self.cube_size[1])
         self.ColRange = slice(0, self.cube_size[1])
-        if 'channels_last' == self.data_format:
+        if 'channels_last' == self.trainConfig['data_format']:
             self.X_size = self.cube_size+[2] # 2 channel CT and PET
             self.y_size = self.cube_size+[1] # 1 channel output
         else: # 'channels_first'
@@ -246,30 +315,32 @@ class DSSENet_Generator(Sequence):
             self.y_size = [1] + self.cube_size # 1 channel output
 
         if self.verbose:
-            print('trainConfigFilePath: ', trainConfigFilePath)
-            print('data_format: ', self.data_format)
-            print('useDataAugmentationDuringTraining: ', self.useDataAugmentationDuringTraining)
-            print('batch_size: ', self.batch_size)
-            print('numCVFolds: ', self.numCVFolds)
-            print('cvFoldIndex: ', self.cvFoldIndex)
-            print('isValidationFlag: ', self.isValidationFlag)            
-            print('labels_to_train: ', self.trainConfig["labels_to_train"])
+            print('trainConfigFilePath: ', trainConfigFilePath)            
+            print('resampledFilesLocation: ', self.trainConfig["resampledFilesLocation"])
+            print('suffixList: ', self.trainConfig["suffixList"])
+            print('patientVol_width: ', self.trainConfig["patientVol_width"])
+            print('patientVol_Height: ', self.trainConfig["patientVol_Height"])
+            print('change_intensity: ', self.trainConfig["patientVol_Depth"]) 
+            print('ct_low: ', self.trainConfig["ct_low"])
+            print('ct_high: ', self.trainConfig["ct_high"])
+            print('pt_low: ', self.trainConfig["pt_low"])
+            print('pt_high: ', self.trainConfig["pt_high"])   
+            print('labels_to_train: ', self.trainConfig["labels_to_train"])                     
             print('label_names: ', self.trainConfig["label_names"])
             print('lr_flip: ', self.trainConfig["lr_flip"])
             print('label_symmetry_map: ', self.trainConfig["label_names"])
             print('translate_random: ', self.trainConfig["translate_random"])
             print('rotate_random: ', self.trainConfig["rotate_random"])
             print('scale_random: ', self.trainConfig["scale_random"])
-            print('change_intensity: ', self.trainConfig["change_intensity"])            
-            print('ct_low: ', self.trainConfig["ct_low"])
-            print('ct_high: ', self.trainConfig["ct_high"])
-            print('pt_low: ', self.trainConfig["pt_low"])
-            print('pt_high: ', self.trainConfig["pt_high"])
-            print('resampledFilesLocation: ', self.trainConfig["resampledFilesLocation"])
-            print('suffixList: ', self.trainConfig["suffixList"])
-            print('patientVol_width: ', self.trainConfig["patientVol_width"])
-            print('patientVol_Height: ', self.trainConfig["patientVol_Height"])
-            print('change_intensity: ', self.trainConfig["patientVol_Depth"])            
+            print('change_intensity: ', self.trainConfig["change_intensity"])                 
+            print('data_format: ', self.trainConfig['data_format'])
+
+            print('useDataAugmentationDuringTraining: ', self.useDataAugmentationDuringTraining)
+            print('batch_size: ', self.batch_size)
+            print('numCVFolds: ', self.numCVFolds)
+            print('cvFoldIndex: ', self.cvFoldIndex)
+            print('isValidationFlag: ', self.isValidationFlag)            
+          
             print('AllPatientList: ', self.AllPatientList)        
             print('numAllPatients: ', self.numAllPatients)
             print('numCVPatients: ', self.numCVPatients)
@@ -279,10 +350,10 @@ class DSSENet_Generator(Sequence):
             print('cVPatients: ', self.cVPatients)
             print('trainPatients: ', self.trainPatients)
             if isValidationFlag:
-                print('Using VALIDATION SET: ', self.patientNames)
+                print('USING VALIDATION SET: ', self.patientNames)
                 print('num_validation_cases: ', self.num_cases)
             else:
-                print('sing TRAINING SET: ', self.patientNames)
+                print('USING TRAINING SET: ', self.patientNames)
                 print('num_training_cases: ', self.num_cases)
             print('DepthRange: ', self.DepthRange)
             print('RowRange: ', self.RowRange)
@@ -297,12 +368,16 @@ class DSSENet_Generator(Sequence):
         # # the __len()__ function is not dependent on data augmentation 
         return self.num_cases // self.batch_size
 
-    def __getitem__(self, idx):
+    def getitemExtended(self, idx):
         # keras sequence returns a batch of datasets, not a single case like generator
         #Note that _getitem__() gets called __len__() number of times, passing idx in range 0 <= idx < __len__()
         batch_X = np.zeros(shape = tuple([self.batch_size] + self.X_size), dtype = np.float32)
         batch_y = np.zeros(shape = tuple([self.batch_size] + self.y_size), dtype = np.int16) #np.int16 #np.float32
+        ctFiles=[]
+        ptFiles=[]
+        gtvFiles=[]
         returnNow = False
+
         for i in range(0, self.batch_size):  
             X = np.zeros(shape = tuple(self.X_size), dtype = np.float32)
             y = np.zeros(shape = tuple(self.y_size), dtype = np.int16) #np.int16     #np.float32   
@@ -335,8 +410,12 @@ class DSSENet_Generator(Sequence):
                 sys.exit() # return batch_X, batch_y, False, 0, 0, 0, 0, 0, 0
 
             #We are here => returnNow = False
-            ctData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], ctFileName)).get_fdata(), axes=(2,1,0)) #axes: depth, height, width            
+            #Also note #axes: depth, height, width
+            ctFiles.append(ctFileName)
+            ctData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], ctFileName)).get_fdata(), axes=(2,1,0))  
+            ptFiles.append(ptFileName)           
             ptData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], ptFileName)).get_fdata(), axes=(2,1,0)) 
+            gtvFiles.append(gtvFileName)
             gtvData = np.transpose(nib.load(os.path.join(self.trainConfig["resampledFilesLocation"], gtvFileName)).get_fdata(), axes=(2,1,0))   
             
             #Debug code
@@ -347,7 +426,7 @@ class DSSENet_Generator(Sequence):
                maxPT = ptData.max()
                minGTV = gtvData.min()
                maxGTV = gtvData.max()         
-               print('BatchId ', idx, ' sampleInBatchId ', i, ' ', ctFileName, ' ', ptFileName, ' ', gtvFileName, )
+               print('BatchId ', idx, ' sampleInBatchId ', i, ' ', ctFileName, ' ', ptFileName, ' ', gtvFileName)
                print('ctData shape-type-min-max: ', ctData.shape, ' ', ctData.dtype, ' ', minCT, ' ', maxCT)
                print('ptData shape-type-min-max: ', ptData.shape, ' ', ptData.dtype, ' ', minPT, ' ', maxPT)
                print('gtvtData shape-type-min-max: ', gtvData.shape, ' ', gtvData.dtype, ' ', minGTV, ' ', maxGTV)  
@@ -371,8 +450,18 @@ class DSSENet_Generator(Sequence):
                     ctData, ptData, gtvData = self.random_transform(ctData, ptData, gtvData, self.trainConfig["rotate_random"], self.trainConfig["scale_random"], self.trainConfig["translate_random"], fast_mode=True)
                 # No flipping or intensity modification
 
+            # pick specific labels to train (if training labels other than 1s and 0s)
+            if self.trainConfig["labels_to_train"] != [1]:
+                temp = np.zeros(shape=gtvData.shape, dtype=gtvData.dtype)
+                new_label_value = 1
+                for lbl in self.trainConfig["labels_to_train"]:
+                    ti = (gtvData == lbl)
+                    temp[ti] = new_label_value
+                    new_label_value += 1
+                gtvData = temp
+
             #Concatenate CT and PET data  in X and put X  in batch_X; Put GTV in Y and Y in batch_Y
-            if 'channels_last' == self.data_format:
+            if 'channels_last' == self.trainConfig['data_format']:
                 #Some of the files have extra slices so we fix the range
                 X[:,:,:,0] = ctData[self.DepthRange, self.RowRange, self.ColRange]
                 X[:,:,:,1] = ptData[self.DepthRange, self.RowRange, self.ColRange]
@@ -385,9 +474,12 @@ class DSSENet_Generator(Sequence):
             batch_X[i,:,:,:,:] = X
             batch_y[i,:,:,:,:] = y
 
-        #return batch_X, batch_y, True, minCT, maxCT, minPT, maxPT, minGTV, maxGTV        
-        return batch_X, batch_y
+        #return batch_X, batch_y, True, minCT, maxCT, minPT, maxPT, minGTV, maxGTV      
+        return batch_X, batch_y, ctFiles, ptFiles, gtvFiles
 
+    def __getitem__(self, idx):
+        batch_X, batch_y, ctFiles, ptFiles, gtvFiles = self.getitemExtended(idx)
+        return batch_X, batch_y
 
     def generate_rotation_matrix(self,rotation_angles_deg):    
         R = np.zeros((3,3))
@@ -419,40 +511,40 @@ class DSSENet_Generator(Sequence):
         label = ndimage.affine_transform(label, matrix = A, offset = t, prefilter = False, mode = 'nearest', order = 0) 
         return (img1, img2, label)   
 
-import matplotlib.pyplot as plt
-def displayBatchData(batchX, batchY, sampleInBatchId = 0, startSliceId = 26, endSliceId = 31, data_format='channels_last',pauseTime_sec = 0.5):
-    numSamplesInBatch = batchX.shape[0]
-    depth = batchX.shape[1] if 'channels_last' == data_format else batchX.shape[2]
-    numSlicesToDisplay = endSliceId - startSliceId + 1
-    plt.figure(1)#sampleInBatchId+1
-    for sliceId in range(startSliceId, endSliceId):
-        offset = sliceId - startSliceId
-        #Display CT        
-        plt.subplot(3, numSlicesToDisplay, offset+1)
-        plt.axis('off')
-        plt.title('CT_'+str(sliceId), fontsize=8) 
-        if 'channels_last' == data_format:
-            plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 0])
-        else: # 'channel_first'
-            plt.imshow(batchX[sampleInBatchId, 0, sliceId,:, :])
-        #Display PET        
-        plt.subplot(3, numSlicesToDisplay, numSlicesToDisplay + offset+1)
-        plt.axis('off')
-        plt.title('PT_'+str(sliceId), fontsize=8)
-        if 'channels_last' == data_format:
-            plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 1])
-        else: # 'channel_first'
-            plt.imshow(batchX[sampleInBatchId, 1, sliceId,:, :])
-        #Display GTV        
-        plt.subplot(3, numSlicesToDisplay, 2*numSlicesToDisplay + offset+1)
-        plt.axis('off')
-        plt.title('GTV_'+str(sliceId), fontsize=8)
-        if 'channels_last' == data_format:
-            plt.imshow(batchY[sampleInBatchId, sliceId,:, :, 0])
-        else: # 'channel_first'
-            plt.imshow(batchY[sampleInBatchId, 0, sliceId,:, :])
-    plt.show()
-    plt.pause(pauseTime_sec)
+
+    def displayBatchData(self, batchX, batchY, sampleInBatchId = 0, startSliceId = 26, endSliceId = 31, pauseTime_sec = 0.5):
+        numSamplesInBatch = batchX.shape[0]
+        depth = batchX.shape[1] if 'channels_last' == self.trainConfig['data_format'] else batchX.shape[2]
+        numSlicesToDisplay = endSliceId - startSliceId + 1
+        plt.figure(1)#sampleInBatchId+1
+        for sliceId in range(startSliceId, endSliceId):
+            offset = sliceId - startSliceId
+            #Display CT        
+            plt.subplot(3, numSlicesToDisplay, offset+1)
+            plt.axis('off')
+            plt.title('CT_'+str(sliceId), fontsize=8) 
+            if 'channels_last' == self.trainConfig['data_format']:
+                plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 0])
+            else: # 'channel_first'
+                plt.imshow(batchX[sampleInBatchId, 0, sliceId,:, :])
+            #Display PET        
+            plt.subplot(3, numSlicesToDisplay, numSlicesToDisplay + offset+1)
+            plt.axis('off')
+            plt.title('PT_'+str(sliceId), fontsize=8)
+            if 'channels_last' == self.trainConfig['data_format']:
+                plt.imshow(batchX[sampleInBatchId, sliceId,:, :, 1])
+            else: # 'channel_first'
+                plt.imshow(batchX[sampleInBatchId, 1, sliceId,:, :])
+            #Display GTV        
+            plt.subplot(3, numSlicesToDisplay, 2*numSlicesToDisplay + offset+1)
+            plt.axis('off')
+            plt.title('GTV_'+str(sliceId), fontsize=8)
+            if 'channels_last' == self.trainConfig['data_format']:
+                plt.imshow(batchY[sampleInBatchId, sliceId,:, :, 0])
+            else: # 'channel_first'
+                plt.imshow(batchY[sampleInBatchId, 0, sliceId,:, :])
+        plt.show()
+        plt.pause(pauseTime_sec)
 
 
 
@@ -580,123 +672,123 @@ def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     img_input = Input(shape = input_shape) # (Nc, D, H, W) if channels_first else  (D, H, W, Nc) Note batch_size is not included
     # if the input has more than 1 channel it has to be expanded because broadcasting only works for 1 input
     # channel
-	#>>>>>>> (16, 144, 144, 2)
+	#>>>>>>> (144, 144, 144, 2)
     input_channels =  input_shape[-1] if 'channels_last' == data_format else input_shape[-4] #config["inputChannels"]
     tile_tensor    =  [1,1,1,1,16]    if 'channels_last' == data_format else [1,16,1,1,1]    #config["inputChannels"]
     if 1 == input_channels:
         sixteen_channelInput = tf.tile(img_input,tile_tensor)
     else:
-		#>>>>>> <tf.Tensor 'elu/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+		#>>>>>> <tf.Tensor 'elu/Identity:0' shape=(None, 144, 144, 144, 16) dtype=float32>
         sixteen_channelInput = ConvBnElu(img_input, filters=16, kernel_size = (5,5,5), strides = (1,1,1),  data_format=data_format)
     #In Table 1 of Ref 1, stride of 1x1x5 was mentioned for conv1, but we are sicking to stride 1x1x1; And here conv1 step includes add + elu
-	#>>>>>>> <tf.Tensor 'elu_1/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+	#>>>>>>> <tf.Tensor 'elu_1/Identity:0' shape=(None, 144, 144, 144, 16) dtype=float32>
     _InTr =  ELU()(Add()([ConvBnElu(sixteen_channelInput, filters=16, kernel_size = (5,5,5), strides = (1,1,1),  data_format=data_format), sixteen_channelInput]))
 	#>>>>>> <tf.Tensor 'spatial_dropout3d/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
     _InTrDropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_InTr)
 
     #DownTr32  D x H x W x 16 ==> D/2 x H/2 x W/2 x 32  
-	#>>>>>> <tf.Tensor 'elu_3/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_3/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _DownTr32  =  DownConvBnElu(x=_InTr, in_filters=16,  data_format=data_format)
-	#>>>>>> <tf.Tensor 'elu_6/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_6/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _DownTr32  =  UpperLayerSingleResidualBlock(x=_DownTr32, data_format=data_format)
-	#>>>>>> <tf.Tensor 'elu_9/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_9/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _DownTr32  =  UpperLayerSingleResidualBlock(x=_DownTr32, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _DownTr32  =  Squeeze_Excite_block(x=_DownTr32, ratio=8, data_format=data_format)
-	#>>>>>> <tf.Tensor 'spatial_dropout3d_1/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_1/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _DownTr32Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr32)
 
     #DownTr64   D/2 x H/2 x W/2 x 32 ==> D/4 x H/4 x W/4  x 64  
-	#>>>>>> <tf.Tensor 'elu_10/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_10/Identity:0' shape=(None, 36, 36, 36, 64) dtype=float32>
     _DownTr64  =  DownConvBnElu(x=_DownTr32, in_filters=32,  data_format=data_format)
-    #>>>>>> <tf.Tensor 'elu_20/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>	
+    #>>>>>> <tf.Tensor 'elu_20/Identity:0' shape=(None, 36, 36, 36, 64) dtype=float32>	
     _DownTr64  =  SingleAndDoubleResidualBlock(x=_DownTr64,  data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_1/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_1/Identity:0' shape=(None, 36, 36, 36, 64) dtype=float32>
     _DownTr64  =  Squeeze_Excite_block(x=_DownTr64, ratio=8, data_format=data_format)
-	#>>>>>> <tf.Tensor 'spatial_dropout3d_2/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_2/Identity:0' shape=(None, 36, 36, 36, 64) dtype=float32>
     _DownTr64Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr64)
 
      #DownTr128   D/4 x H/4 x W/4  x 64 ==> D/8 x H/8 x W/8 x 128
-	#>>>>>> <tf.Tensor 'elu_21/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_21/Identity:0' shape=(None, 18, 18, 18, 128) dtype=float32>
     _DownTr128  =  DownConvBnElu(x=_DownTr64, in_filters=64,  data_format=data_format)  
-	#>>>>>> <tf.Tensor 'elu_31/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_31/Identity:0' shape=(None, 18, 18, 18, 128) dtype=float32>
     _DownTr128  =  SingleAndDoubleResidualBlock(x=_DownTr128,  data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_2/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_2/Identity:0' shape=(None, 18, 18, 18, 128) dtype=float32>
     _DownTr128  =  Squeeze_Excite_block(x=_DownTr128, ratio=8, data_format=data_format)
-	#>>>>>> <tf.Tensor 'spatial_dropout3d_3/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'spatial_dropout3d_3/Identity:0' shape=(None, 18, 18, 18, 128) dtype=float32>
     _DownTr128Dropout = SpatialDropout3D(rate=dropout_prob, data_format='channels_last')(_DownTr128)
 
     #DownTr256   D/8 x H/8 x W/8 x 128 ==> D/16 x H/16 x W/16 x 256
-	#>>>>>> <tf.Tensor 'elu_32/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_32/Identity:0' shape=(None, 9, 9, 9, 256) dtype=float32>
     _DownTr256  =  DownConvBnElu(x=_DownTr128, in_filters=128,  data_format=data_format)  
-	#>>>>>> <tf.Tensor 'elu_42/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_42/Identity:0' shape=(None, 9, 9, 9, 256) dtype=float32>
     _DownTr256  =  SingleAndDoubleResidualBlock(x=_DownTr256, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_3/Identity:0' shape=(None, 1, 9, 9, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_3/Identity:0' shape=(None, 9, 9, 9, 256) dtype=float32>
     _DownTr256  =  Squeeze_Excite_block(x=_DownTr256, ratio=8, data_format=data_format)       
 
 
     ########## Dncode path ##########
     #UpTr256    D/16 x H/16 x W/16 x 256 ==> D/8 x H/8 x W/8 x 128 => D/8 x H/8 x W/8 x 256 (due to concatenation)
-	#>>>>>> <tf.Tensor 'elu_43/Identity:0' shape=(None, 2, 18, 18, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_43/Identity:0' shape=(None, 18, 18, 18, 128) dtype=float32>
     _UpTr256  = UpConvBnElu(_DownTr256, in_filters=256, data_format=data_format)
-	#>>>>>> <tf.Tensor 'concatenate/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'concatenate/Identity:0' shape=(None, 18, 18, 18, 256) dtype=float32>
     _UpTr256  = Concatenate(axis = getBNAxis(data_format))([_UpTr256,_DownTr128Dropout])
-	#>>>>>> <tf.Tensor 'elu_53/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_53/Identity:0' shape=(None, 18, 18, 18, 256) dtype=float32>
     _UpTr256  =  SingleAndDoubleResidualBlock(x=_UpTr256, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_4/Identity:0' shape=(None, 2, 18, 18, 256) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_4/Identity:0' shape=(None, 18, 18, 18, 256) dtype=float32>
     _UpTr256  =  Squeeze_Excite_block(x=_UpTr256, ratio=8, data_format=data_format)
     #Also Dsv4 D/8 x H/8 x W/8 x 256 => D x H x W x 4
-	#>>>>>> <tf.Tensor 'up_sampling3d/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+	#>>>>>> <tf.Tensor 'up_sampling3d/Identity:0' shape=(None, 144, 144, 144, 4) dtype=float32>
     _Dsv4 = DeepSupervision(_UpTr256, filters=4, upSamplingRatio=8, data_format=data_format)
 
 
     #UpTr128    D/8 x H/8 x W/8 x 256 ==> D/4 x H/4 x W/4 x 64 => D/4 x H/4 x W/4 x 128 (due to concatenation)
-	#>>>>>> <tf.Tensor 'elu_54/Identity:0' shape=(None, 4, 36, 36, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_54/Identity:0' shape=(None, 36, 36, 36, 64) dtype=float32>
     _UpTr128  = UpConvBnElu(_UpTr256, in_filters=128, data_format=data_format)
-	#>>>>>> <tf.Tensor 'concatenate_1/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'concatenate_1/Identity:0' shape=(None, 36, 36, 36, 128) dtype=float32>
     _UpTr128  = Concatenate(axis = getBNAxis(data_format))([_UpTr128,_DownTr64Dropout])
-	#>>>>>> <tf.Tensor 'elu_64/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_64/Identity:0' shape=(None, 36, 36, 36, 128) dtype=float32>
     _UpTr128  =  SingleAndDoubleResidualBlock(x=_UpTr128, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_5/Identity:0' shape=(None, 4, 36, 36, 128) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_5/Identity:0' shape=(None, 36, 36, 36, 128) dtype=float32>
     _UpTr128  =  Squeeze_Excite_block(x=_UpTr128, ratio=8, data_format=data_format)
     #Also Dsv3 D/4 x H/4 x W/4 x 128 => D x H x W x 4
-	#>>>>>> <tf.Tensor 'up_sampling3d_1/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+	#>>>>>> <tf.Tensor 'up_sampling3d_1/Identity:0' shape=(None, 144, 144, 144, 4) dtype=float32>
     _Dsv3 = DeepSupervision(_UpTr128, filters=4, upSamplingRatio=4, data_format=data_format)
 
     #UpTr64    D/4 x H/4 x W/4 x 128 ==> D/2 x H/2 x W/2 x 32 => D/2 x H/2 x W/2 x 64 (due to concatenation)
-	#>>>>>> <tf.Tensor 'elu_65/Identity:0' shape=(None, 8, 72, 72, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_65/Identity:0' shape=(None, 72, 72, 72, 32) dtype=float32>
     _UpTr64  = UpConvBnElu(_UpTr128, in_filters=64, data_format=data_format)
 	#>>>>>> <tf.Tensor 'concatenate_2/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
     _UpTr64  = Concatenate(axis = getBNAxis(data_format))([_UpTr64,_DownTr32Dropout])
-	#>>>>>> <tf.Tensor 'elu_75/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_75/Identity:0' shape=(None, 72, 72, 72, 64) dtype=float32>
     _UpTr64  =  SingleAndDoubleResidualBlock(x=_UpTr64, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_6/Identity:0' shape=(None, 8, 72, 72, 64) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_6/Identity:0' shape=(None, 72, 72, 72, 64) dtype=float32>
     _UpTr64  =  Squeeze_Excite_block(x=_UpTr64, ratio=8, data_format=data_format)
     #Also Dsv2 D/2 x H/2 x W/2 x 64 => D x H x W x 4
-	#>>>>>> <tf.Tensor 'up_sampling3d_2/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+	#>>>>>> <tf.Tensor 'up_sampling3d_2/Identity:0' shape=(None, 144, 144, 144, 4) dtype=float32>
     _Dsv2 = DeepSupervision(_UpTr64, filters=4, upSamplingRatio=2, data_format=data_format)
 
     #UpTr32    D/2 x H/2 x W/2 x 64 ==> D x H x W x 16 => D x H x W x 32 (due to concatenation)
-	#>>>>>> <tf.Tensor 'elu_76/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_76/Identity:0' shape=(None, 144, 144, 144, 16) dtype=float32>
     _UpTr32  = UpConvBnElu(_UpTr64, in_filters=32, data_format=data_format)
-	#>>>>>> <tf.Tensor 'concatenate_3/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'concatenate_3/Identity:0' shape=(None, 144, 144, 144, 32) dtype=float32>
     _UpTr32  = Concatenate(axis = getBNAxis(data_format))([_UpTr32,_InTrDropout])
-	#>>>>>> <tf.Tensor 'elu_79/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_79/Identity:0' shape=(None, 144, 144, 144, 32) dtype=float32>
     _UpTr32  =   UpperLayerSingleResidualBlock(x=_UpTr32, data_format=data_format)
-	#>>>>>> <tf.Tensor 'elu_82/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'elu_82/Identity:0' shape=(None, 144, 144, 144, 32) dtype=float32>
     _UpTr32  =   UpperLayerSingleResidualBlock(x=_UpTr32, data_format=data_format)
-	#>>>>>> <tf.Tensor 'multiply_7/Identity:0' shape=(None, 16, 144, 144, 32) dtype=float32>
+	#>>>>>> <tf.Tensor 'multiply_7/Identity:0' shape=(None, 144, 144, 144, 32) dtype=float32>
     _UpTr32  =  Squeeze_Excite_block(x=_UpTr32, ratio=8, data_format=data_format)
     #Also Dsv1 D x H x W x 32 => D x H x W x 4
-	#>>>>>> <tf.Tensor 'up_sampling3d_3/Identity:0' shape=(None, 16, 144, 144, 4) dtype=float32>
+	#>>>>>> <tf.Tensor 'up_sampling3d_3/Identity:0' shape=(None, 144, 144, 144, 4) dtype=float32>
     _Dsv1 = DeepSupervision(_UpTr32, filters=4, upSamplingRatio=1, data_format=data_format)
 
     #Final concatenation and convolution
-    #128 x 128 x 128 x 4 ==> 128 x 128 x 128 x 16
-	#>>>>>> <tf.Tensor 'concatenate_4/Identity:0' shape=(None, 16, 144, 144, 16) dtype=float32>
+    #144 x 144 x 144 x 4 ==> 144 x 144 x 144 x 16
+	#>>>>>> <tf.Tensor 'concatenate_4/Identity:0' shape=(None, 144, 144, 144, 16) dtype=float32>
     _DsvConcat = Concatenate(axis = getBNAxis(data_format))([_Dsv1, _Dsv2, _Dsv3, _Dsv4])
-    #128 x 128 x 128 x 1 ==> 128 x 128 x 128 x 1
-	#>>>>>> <tf.Tensor 'conv3d_66/Identity:0' shape=(None, 16, 144, 144, 1) dtype=float32>
+    #144 x 144 x 144 x 16 ==> 144 x 144 x 144 x 2
+	#>>>>>> <tf.Tensor 'conv3d_66/Identity:0' shape=(None, 144, 144, 144, 2) dtype=float32>
     #We are going to use filters = 2 for two classes (0 and 1) and softmax as the activation
     #And we will use categorical accuracy for metric and modified dice loss as loss
     _Final = Conv3D(filters = 2, kernel_size = (1,1,1), strides = (1,1,1), kernel_initializer = 'he_normal', padding = 'same', activation='softmax', data_format=data_format, use_bias = False)(_DsvConcat)
@@ -707,7 +799,7 @@ def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
 
 
 ############### Model train and test function #################
-def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False):
+def train(trainConfigFilePath):
     # load trainInputParams  from JSON config files
     with open(trainConfigFilePath) as f:
         trainInputParams = json.load(f)
@@ -732,7 +824,7 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
     num_gpus = len(gpus)    
     print('Number of GPUs available  for training: ', num_gpus)
     #If using CPUs only for training (set it true if getting GPU memory allocation error)
-    if True == cpuOnlyFlag:
+    if True == trainInputParams['cpuOnlyFlag']:
         #Hide GPUs
         if num_gpus > 0: #gpus:
             print("Restricting TensorFlow to use CPU only by hiding GPUs.")
@@ -780,7 +872,6 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
     for cvFoldIndex in range(0,numCVFolds):
 
         train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                            data_format=data_format,
                                             useDataAugmentationDuringTraining = True,
                                             batch_size = 1,
                                             numCVFolds = numCVFolds,
@@ -790,7 +881,6 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
                                                     )
 
         val_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                            data_format=data_format,
                                             useDataAugmentationDuringTraining = False,
                                             batch_size = 1,
                                             numCVFolds = numCVFolds,
@@ -808,7 +898,7 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
         print("labels to train: ", trainInputParams['labels_to_train'])
         
         sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
-        if 'channels_last' == data_format:
+        if 'channels_last' == trainInputParams['data_format']:
             input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
             output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
         else: # 'channels_first'
@@ -831,11 +921,12 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
             model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
             print('Loaded model: ' + thisFoldIntermediateModelPath)
         else:
-            model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=data_format)                              
+            model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
             optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
             if trainInputParams['AMP']:
                 optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
             model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'], metrics = [trainInputParams['acc_func']])
+            #model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])
             model.summary(line_length=140)
             
         # TODO: clean up the evaluation callback
@@ -844,17 +935,6 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
         train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
                              tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
                                     monitor = "loss", save_best_only = True, mode='min')]
-
-        # model.fit_generator(train_sequence,
-        #                     steps_per_epoch = num_train_cases,
-        #                     max_queue_size = 40,
-        #                     epochs = trainInputParams['num_training_epochs'],
-        #                     validation_data = val_sequence,
-        #                     validation_steps = num_val_cases,
-        #                     callbacks = train_callbacks,
-        #                     use_multiprocessing = False,
-        #                     workers = num_cpus, 
-        #                     shuffle = True)
 
         model.fit(x=train_sequence,
                             steps_per_epoch = num_train_cases,
@@ -867,3 +947,108 @@ def train(trainConfigFilePath, data_format='channels_last', cpuOnlyFlag = False)
                             workers = num_cpus, 
                             shuffle = True)
         model.save(thisFoldFinalModelPath,save_format='h5')
+
+def msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+                        numCVFolds = 5,
+                        cvFoldIndex = 0,
+                        savePredictions = True,
+                        out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+                        thisFoldFinalModelPath = "",
+                        verbose=False):
+    
+    #Open configuration
+    with open(trainConfigFilePath) as f:
+        trainInputParams = json.load(f)
+        f.close()
+    
+    #Get location of model file based on the CVFold index if it is not already provided
+    if 0 == len(thisFoldFinalModelPath):
+        thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
+        thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+    print(thisFoldFinalModelPath)
+    
+    #Make sure model file exists
+    if  os.path.exists(thisFoldFinalModelPath) and os.path.isfile(thisFoldFinalModelPath):
+        pass
+    else:
+        sys.exit('No file exists at ', thisFoldFinalModelPath)
+
+    #Make sure output directory exists 
+    if os.path.exists(out_dir):
+        #Check if it is a directory or not
+        if os.path.isfile(out_dir): 
+            sys.exit(out_dir, ' is a file and not directory. Exiting.') 
+    else:
+        #create 
+        os.makedirs(out_dir)
+
+    #Create test data generator
+    batch_size =1
+    val_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                    useDataAugmentationDuringTraining = False,
+                                    batch_size = batch_size,
+                                    numCVFolds = numCVFolds,
+                                    cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
+                                    isValidationFlag = True,
+                                    verbose=verbose
+                                    )
+    numBatches = val_sequence.__len__()
+
+    #load model
+    model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+    print('Loaded model: ' + thisFoldFinalModelPath)
+
+    #Evaluation and writing loop
+    test_msd  = np.zeros((numBatches*batch_size, len(trainInputParams['label_names'])))
+    test_dice = np.zeros((numBatches*batch_size, len(trainInputParams['label_names'])))
+    for idx in range(0,numBatches):
+            #With channel_last data format batch_X: (batch_size, 144, 144, 144, 2), batch_y_gt: (batch_size, 144, 144, 144, 1),
+            batch_X, batch_y_gt, ctFiles, ptFiles, gtvFiles = val_sequence.getitemExtended(idx)
+            t = time.time()
+            #With channel_last data format batch_X: (batch_size, 144, 144, 144, 2), batch_y_gt: (batch_size, 144, 144, 144, 1),
+            batch_y_pred = model.predict(batch_X, batch_size=batch_size)
+            print('\nInference time for ', batch_size, ' samples: ', time.time() - t)
+            #Convert softmax output for  N-classes (here N= 2, 0 and 1) into the class with highest probability
+            if 'channels_last' == trainInputParams['data_format']:
+                batch_y_pred = np.argmax(batch_y_pred, axis=-1).astype('int16')
+                batch_y_gt = np.squeeze(batch_y_gt,axis=-1)
+            else:
+                batch_y_pred = np.argmax(batch_y_pred, axis=1).astype('int16')
+                batch_y_gt = np.squeeze(batch_y_gt,axis=1)
+                
+            for i in range(0, batch_size):
+                saveIndex = idx * batch_size + i
+                print('Batch ', idx, ' sampleInBatch ', i, ' ', ctFiles[i], ' ', ptFiles[i], ' ', gtvFiles[i])
+                #get spacing
+                orgSpacing = SimpleITK.ReadImage(os.path.join(trainInputParams["resampledFilesLocation"], ctFiles[i])).GetSpacing()
+                tarnsposedSpacing = (orgSpacing[2], orgSpacing[1], orgSpacing[0])  
+                [lbls, msd, rms, hd] = surface_distance_multi_label(batch_y_pred[i,:], batch_y_gt[i,:], sampling=tarnsposedSpacing)
+                test_msd[saveIndex, lbls-1] = np.transpose(msd)
+                print('Surface to surface MSD [mm]: ', np.transpose(msd))
+                dice = dice_multi_label(batch_y_pred[i,:], batch_y_gt[i,:])
+                test_dice[saveIndex, lbls-1] = np.transpose(dice)
+                print('Dice: ', np.transpose(dice))
+                # save results to NIFTI 
+                if savePredictions:
+                    #Load original GTV data <--- remember its size can be larger than the sample batch_y_gt[i,:] 
+                    srcImage_nii = nib.load(os.path.join(trainInputParams["resampledFilesLocation"], gtvFiles[i]))
+                    srcImage_nii_data = srcImage_nii.get_fdata()
+                    srcImage_nii_aff  = srcImage_nii.affine   
+                    #Transpose    
+                    transposed_srcImage_nii_data = np.transpose(srcImage_nii_data, axes=(2,1,0))
+                    transposed_gtv_pred_data = np.zeros(shape = transposed_srcImage_nii_data.shape, dtype = np.int16)
+                    predY_shape= batch_y_pred[i,:].shape
+                    #debug
+                    if predY_shape != transposed_srcImage_nii_data.shape:
+                        print("predY_shape ", predY_shape, " transpose_GTV shape: ", transposed_srcImage_nii_data.shape)
+                    transposed_gtv_pred_data[slice(0, predY_shape[0]), slice(0, predY_shape[1]), slice(0, predY_shape[2])] = batch_y_pred[i,:]
+                    gtv_pred_data = np.transpose(transposed_gtv_pred_data, axes=(2,1,0))
+                    gtv_pred_data = gtv_pred_data.astype(srcImage_nii_data.dtype)
+                    desImage_nii = nib.Nifti1Image(gtv_pred_data, affine=srcImage_nii_aff)
+                    desFileName = "pred_" + gtvFiles[i]
+                    nib.save(desImage_nii, os.path.join(out_dir,desFileName))
+
+                pass
+                #Read original GTV data and get its size since that size sometimes may be larger 
+                # (in slice) than y_true and y_pred
+    pass
