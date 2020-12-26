@@ -1044,8 +1044,7 @@ def msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositori
                         print("predY_shape ", predY_shape, " transpose_GTV shape: ", transposed_srcImage_nii_data.shape)
                     transposed_gtv_pred_data[slice(0, predY_shape[0]), slice(0, predY_shape[1]), slice(0, predY_shape[2])] = batch_y_pred[i,:]
                     #Transpose back to have same alignment as srcImage
-                    gtv_pred_data = np.transpose(transposed_gtv_pred_data, axes=(2,1,0))
-                    gtv_pred_data = gtv_pred_data.astype(np.int8)#srcImage_nii_data.dtype
+                    gtv_pred_data = np.transpose(transposed_gtv_pred_data, axes=(2,1,0)).astype(np.int8)#srcImage_nii_data.dtype
                     desImage_nii = nib.Nifti1Image(gtv_pred_data, affine=srcImage_nii_aff)
                     desFileName = "predFold{:>02d}_".format(cvFoldIndex) + gtvFiles[i]
                     nib.save(desImage_nii, os.path.join(out_dir,desFileName))
