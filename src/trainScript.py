@@ -6,4 +6,5 @@ from DSSENet import DSSE_VNet
 #import pprint
 #pprint.pprint(sys.path)
 #pprint.pprint(sys.modules)
-DSSE_VNet.train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json')
+DSSE_VNet.train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+                numCVFolds=5)

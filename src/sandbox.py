@@ -756,17 +756,17 @@ from DSSENet import DSSE_VNet
 #     useDataAugmentationDuringTraining = False,
 #     batch_size = 1,
 #     numCVFolds = 5,
-#     cvFoldIndex = 1, #Can be between 0 to 4
+#     cvFoldIndex = 2, #Can be between 0 to 4
 #     isValidationFlag = False,
 #     verbose=True
 #     )
 
 # numBatches = trainGenerator.__len__()
 # batchX, batchY = trainGenerator.__getitem__(5)
-# DSSE_VNet.displayBatchData(batchX, batchY, sampleInBatchId = 0, 
-#                           startSliceId = 10, 
-#                           endSliceId = 15, 
-#                           data_format='channels_last',pauseTime_sec = 0.5)
+# trainGenerator.displayBatchData(batchX, batchY, sampleInBatchId = 0, 
+#                           startSliceId = 70, 
+#                           endSliceId = 75, 
+#                           pauseTime_sec = 0.5)
 
 # for idx in range(0,numBatches):
 #    batchX, batchY = trainGenerator.__getitem__(idx)    
@@ -847,24 +847,21 @@ from DSSENet import DSSE_VNet
 #############################################
 
 ##################################################
-DSSE_VNet.msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-                                numCVFolds = 5,
-                                cvFoldIndex = 0,
-                                savePredictions = True,
-                                out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
-                                thisFoldFinalModelPath = "",
-                                verbose=False)
+thisFoldFinalModelPath, test_msd, test_dice = DSSE_VNet.evaluateFold(
+    trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+    cvFoldIndex = 1,        
+    numCVFolds = 5,                        
+    savePredictions = True,
+    out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+    thisFoldFinalModelPath = "",
+    verbose=False)
 
+
+# listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight = DSSE_VNet.evaluate(
+#     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+#             numCVFolds = 5)
 ####################################### 
 
 # TODO Changes to be copied into VM 
-# - tb_logdir in train() method
-# - save_format = 'h5' in model.save() in train() methof
-# - model.fit instead of model,fit_generator in train() method
-# - The data generator class with extended getitem method
-# - The dice_coef method with all its comments
-# - The msd_and_dice_cvFold method
-# - The DSSEVNet method with new comments
-# - dice_coef method is hardcoded for channel_last
-# - msd_and_dice_cvFold is also hardcoded for channel_last
+
 

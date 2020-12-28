@@ -265,9 +265,9 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
         fp.close()
     print('generateNFoldCVnput Finshed.')
     return
-
-createSplitFiles('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',  verbose=False)
-generateNFoldCVnput('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
+####################### Test code #####################
+#createSplitFiles('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',  verbose=False)
+#generateNFoldCVnput('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', numCVFold=5, verbose=False)
 
 # with open('input/trainInput_DSSENet.json') as fp:
 #         previousConfig = json.load(fp)
@@ -275,3 +275,54 @@ generateNFoldCVnput('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInp
 # with open('input/trainInput_DSSENet.json', 'w') as fp:
 #         json.dump(previousConfig, fp, ) #, indent='' #, indent=4
 #         fp.close()
+
+############################# FINAL ###################################
+
+def createTrainInputJsonFile(jsonPath):
+    dataLocation = "/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_train/resampled"
+    #Empty dictionary
+    trainConfig = {}
+    #Insert members
+    trainConfig['resampledFilesLocation'] = dataLocation
+    trainConfig['suffixList'] = ["_ct.nii.gz", "_pt.nii.gz", "_ct_gtvt.nii.gz"]
+    trainConfig["patientVol_width"] = 144
+    trainConfig["patientVol_Height"] = 144
+    trainConfig["patientVol_Depth"] = 144
+    trainConfig['ct_low']= -1000       
+    trainConfig['ct_high']= 3095          
+    trainConfig['pt_low']= 0.0           
+    trainConfig['pt_high']= 20.0
+    trainConfig['labels_to_train'] = [1]
+    trainConfig['label_names'] = {"1": "GTV"}
+    trainConfig['lr_flip'] = False
+    trainConfig['label_symmetry_map'] = [[1,1]]
+    trainConfig['translate_random']= 30.0       
+    trainConfig['rotate_random']= 15.0          
+    trainConfig['scale_random']= 0.2            
+    trainConfig['change_intensity']= 0.05
+    trainConfig['num_training_epochs']= 25    
+    trainConfig['data_format']= "channels_last"
+    trainConfig['cpuOnlyFlag'] =  False
+    trainConfig['lastSavedModelFolder'] = "/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels"
+    #Create train_CV patient list and test patient list
+    #Randomize patient list : First we got file list, then dropped
+    # the '_ct.nii.gz' to get patient name and then shuffled it
+    patientList = [(os.path.basename(f)).replace('_ct.nii.gz','') \
+      for f in glob.glob(dataLocation + '/*_ct.nii.gz', recursive=False) ]
+    #Ranomize patient list
+    random.shuffle(patientList)
+    numAllPatients = len(patientList)
+    numTrainCVPatients =  round(0.85*numAllPatients)
+    numTestPatients = numAllPatients - numTrainCVPatients
+    trainConfig['numTrainCVPatients'] = numTrainCVPatients
+    trainConfig['trainCVPatientList'] = patientList[0:numTrainCVPatients]
+    trainConfig['numTestPatients'] = numTestPatients
+    trainConfig['testPatientList'] = patientList[numTrainCVPatients:numAllPatients]
+    with open(jsonPath, 'w') as fp:
+            json.dump(trainConfig, fp, ) #, indent='' #, indent=4
+            fp.close()
+
+#Generate trainInputJson file: Remember to call only once sice due to 
+#random.shuffle trainCVPatientList and testPatientList changes every time 
+# method is invoked.
+createTrainInputJsonFile('/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/temp.json')

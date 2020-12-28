@@ -38,113 +38,69 @@ import matplotlib.pyplot as plt
 import time
 
 ######### Loss functions ########## 
-# mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
-def dice_coef(y_true, y_pred, smooth = 0.0001, squared_denominator = False, ignore_zero_label = True):
-    num_dim = len(K.int_shape(y_pred)) 
-    num_labels = K.int_shape(y_pred)[-1]
-    reduce_axis = list(range(1, num_dim - 1))
-    y_true = y_true[..., 0]
+##mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
+def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format = 'channels_last'):
+    #For two labels shape=(None, 144, 144, 144, 2)
+    num_dim = len(K.int_shape(y_pred)) #Should be 5
+    if 'channels_last' == data_format:
+        num_labels = K.int_shape(y_pred)[-1] #Should be 2        
+    else:
+        num_labels = K.int_shape(y_pred)[1] #Should be 2
+
+    reduce_axis = list(range(1, num_dim - 1)) #should be [1, 2, 3]
+
+    #... means as many : as needed 
+    # Also  fixing channel index (here channel_last is assumed hard-coded) removes that dimension
+    # So y_true : (None, 144, 144, 144, 1) --> (None, 144, 144, 144)
+    y_true = y_true[..., 0] if 'channels_last' == data_format else  y_true[:, 0, ...]
     dice = 0.0
 
     if (ignore_zero_label == True):
         label_range = range(1, num_labels)
     else:
         label_range = range(0, num_labels)
-
+    # In this case zero_label is not ignored and label_range = [0,1]
     for i in label_range:
-        y_pred_b = y_pred[..., i]
+        #For label 0, softmax output at channel 0 and for label 1, softmax output at channel 0
+        #Once again shape of y_pred_b = (None, 144, 144, 144)
+        y_pred_b = y_pred[..., i] if 'channels_last' == data_format else  y_pred[:, i, ...]
+        # y_true_b is the mask corresponding to label = i, here 0 or 1
+        # y_true_b is type casted to type of y_pred
         y_true_b = K.cast(K.equal(y_true, i), K.dtype(y_pred))
         intersection = K.sum(y_true_b * y_pred_b, axis = reduce_axis)        
         if squared_denominator: 
             y_pred_b = K.square(y_pred_b)
         y_true_o = K.sum(y_true_b, axis = reduce_axis)
         y_pred_o =  K.sum(y_pred_b, axis = reduce_axis)     
-        d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth) 
+        d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth)
+        #K.mean(d) is the dice for label=i, i = 0, 1 
         dice = dice + K.mean(d)
     dice = dice / len(label_range)
     return dice
 
-def dice_loss(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, squared_denominator = False, ignore_zero_label = False)
-    return f
+def dice_loss(data_format = 'channels_last'):
+    def loss(y_true, y_pred):
+        f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False, data_format=data_format)
+        return f    
+    return loss
 
-def dice_loss_fg(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, squared_denominator = False, ignore_zero_label = True)
-    return f
+def dice_loss_fg(data_format = 'channels_last'):
+    def loss(y_true, y_pred):
+        f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format=data_format)
+        return f
+    return loss
 
-def modified_dice_loss(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, squared_denominator = True, ignore_zero_label = False)
-    return f
+def modified_dice_loss(data_format = 'channels_last'):
+    def loss(y_true, y_pred):
+        f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False, data_format=data_format)
+        return f
+    return loss
 
-def modified_dice_loss_fg(y_true, y_pred):
-    f = 1 - dice_coef(y_true, y_pred, squared_denominator = True, ignore_zero_label = True)
-    return f
-
-
-############### Temporarily commented out
-# mean Dice loss (mean of multiple labels with option to ignore zero (background) label)
-# def dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format = 'channels_last'):
-#     #For two labels shape=(None, 144, 144, 144, 2)
-#     num_dim = len(K.int_shape(y_pred)) #Should be 5
-#     if 'channels_last' == data_format:
-#         num_labels = K.int_shape(y_pred)[-1] #Should be 2        
-#     else:
-#         num_labels = K.int_shape(y_pred)[1] #Should be 2
-
-#     reduce_axis = list(range(1, num_dim - 1)) #should be [1, 2, 3]
-
-#     #... means as many : as needed 
-#     # Also  fixing channel index (here channel_last is assumed hard-coded) removes that dimension
-#     # So y_true : (None, 144, 144, 144, 1) --> (None, 144, 144, 144)
-#     y_true = y_true[..., 0] if 'channels_last' == data_format else  y_true[:, 0, ...]
-#     dice = 0.0
-
-#     if (ignore_zero_label == True):
-#         label_range = range(1, num_labels)
-#     else:
-#         label_range = range(0, num_labels)
-#     # In this case zero_label is not ignored and label_range = [0,1]
-#     for i in label_range:
-#         #For label 0, softmax output at channel 0 and for label 1, softmax output at channel 0
-#         #Once again shape of y_pred_b = (None, 144, 144, 144)
-#         y_pred_b = y_pred[..., i] if 'channels_last' == data_format else  y_pred[:, i, ...]
-#         # y_true_b is the mask corresponding to label = i, here 0 or 1
-#         # y_true_b is type casted to type of y_pred
-#         y_true_b = K.cast(K.equal(y_true, i), K.dtype(y_pred))
-#         intersection = K.sum(y_true_b * y_pred_b, axis = reduce_axis)        
-#         if squared_denominator: 
-#             y_pred_b = K.square(y_pred_b)
-#         y_true_o = K.sum(y_true_b, axis = reduce_axis)
-#         y_pred_o =  K.sum(y_pred_b, axis = reduce_axis)     
-#         d = (2. * intersection + smooth) / (y_true_o + y_pred_o + smooth)
-#         #K.mean(d) is the dice for label=i, i = 0, 1 
-#         dice = dice + K.mean(d)
-#     dice = dice / len(label_range)
-#     return dice
-
-# def dice_loss(data_format = 'channels_last'):
-#     def loss(y_true, y_pred):
-#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = False, data_format=data_format)
-#         return f    
-#     return loss
-
-# def dice_loss_fg(data_format = 'channels_last'):
-#     def loss(y_true, y_pred):
-#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = False, ignore_zero_label = True, data_format=data_format)
-#         return f
-#     return loss
-
-# def modified_dice_loss(data_format = 'channels_last'):
-#     def loss(y_true, y_pred):
-#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = False, data_format=data_format)
-#         return f
-#     return loss
-
-# def modified_dice_loss_fg(data_format = 'channels_last'):
-#     def loss(y_true, y_pred):
-#         f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True, data_format=data_format)
-#         return f
-#     return loss
+def modified_dice_loss_fg(data_format = 'channels_last'):
+    def loss(y_true, y_pred):
+        f = 1 - dice_coef(y_true, y_pred, smooth = 0.00001, squared_denominator = True, ignore_zero_label = True, data_format=data_format)
+        return f
+    return loss
 
 
 
@@ -272,28 +228,29 @@ class DSSENet_Generator(Sequence):
         self.isValidationFlag = isValidationFlag
         self.verbose = verbose
         
-        #Read individual members of trainConfig <-- Is it needed?
+  
         
-        self.AllPatientList = [(os.path.basename(f)).replace('_ct.nii.gz','') \
-                for f in glob.glob(self.trainConfig["resampledFilesLocation"] + '/*_ct.nii.gz', recursive=False) ]
+        # self.TrainCVPatientList = [(os.path.basename(f)).replace('_ct.nii.gz','') \
+        #         for f in glob.glob(self.trainConfig["resampledFilesLocation"] + '/*_ct.nii.gz', recursive=False) ]
+        self.TrainCVPatientList = self.trainConfig["trainCVPatientList"]        
         #DO NOT Ranomize patient list as we want to call the same generator for different CV index
         # and do not want to shuffle patient list between different calls
-        #######random.shuffle(self.AllPatientList)   
+        #######random.shuffle(self.TrainCVPatientList)   
         
         #Based on numCVFolds, CV index and whether this is a training set generator of validation generator
         #determine list of patient names to be used in this data generator
-        self.numAllPatients = len(self.AllPatientList)
-        self.numCVPatients = self.numAllPatients // self.numCVFolds
-        self.numTrainPatients = self.numAllPatients - self.numCVPatients
+        self.numTrainCVPatients = len(self.TrainCVPatientList)
+        self.numCVPatients = self.numTrainCVPatients // self.numCVFolds
+        self.numTrainPatients = self.numTrainCVPatients - self.numCVPatients
         
-        #Assert cvFoldIndex = 0, #Can be between 0 to numCVFolds -1
+        #Assert cvFoldIndex is between 0 to numCVFolds -1
         assert(self.cvFoldIndex >= 0 and self.cvFoldIndex < self.numCVFolds)
         startIdx_cv = self.cvFoldIndex * self.numCVPatients
         endIdx_cv = (self.cvFoldIndex+1) * self.numCVPatients
         self.list_cvIdx = [*range(startIdx_cv, endIdx_cv)]
-        self.list_trainIdx =  [*range(0, startIdx_cv)] + [*range(endIdx_cv, self.numAllPatients)]
-        self.cVPatients = [self.AllPatientList[i] for i in self.list_cvIdx]
-        self.trainPatients = [self.AllPatientList[i] for i in self.list_trainIdx]
+        self.list_trainIdx =  [*range(0, startIdx_cv)] + [*range(endIdx_cv, self.numTrainCVPatients)]
+        self.cVPatients = [self.TrainCVPatientList[i] for i in self.list_cvIdx]
+        self.trainPatients = [self.TrainCVPatientList[i] for i in self.list_trainIdx]
         
         #Is current one a trainData generator or a validation data generator
         if isValidationFlag:
@@ -341,8 +298,8 @@ class DSSENet_Generator(Sequence):
             print('cvFoldIndex: ', self.cvFoldIndex)
             print('isValidationFlag: ', self.isValidationFlag)            
           
-            print('AllPatientList: ', self.AllPatientList)        
-            print('numAllPatients: ', self.numAllPatients)
+            print('TrainCVPatientList: ', self.TrainCVPatientList)        
+            print('numTrainCVPatients: ', self.numTrainCVPatients)
             print('numCVPatients: ', self.numCVPatients)
             print('numTrainPatients: ', self.numTrainPatients)
             print('list_cvIdx: ', self.list_cvIdx)
@@ -798,28 +755,48 @@ def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     return model
 
 
-############### Model train and test function #################
-def train(trainConfigFilePath):
+############### Model train and evaluate function #################
+def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+              cvFoldIndex=0, 
+              numCVFolds = 5):
     # load trainInputParams  from JSON config files
     with open(trainConfigFilePath) as f:
         trainInputParams = json.load(f)
         f.close()
 
-    trainInputParams['loss_func'] = modified_dice_loss
-    trainInputParams['acc_func'] = metrics.categorical_accuracy
-    trainInputParams['group_normalization'] = False
-    trainInputParams['activation_type'] = 'relu'
-    trainInputParams['final_activation_type'] = 'softmax'
-    trainInputParams['AMP'] = False
-    trainInputParams['XLA'] = False
-
+    if 'loss_func' not in trainInputParams:
+        trainInputParams['loss_func'] = modified_dice_loss
+    elif trainInputParams['loss_func'].lower() == 'dice_loss':
+        trainInputParams['loss_func'] = dice_loss
+    elif trainInputParams['loss_func'].lower() == 'modified_dice_loss':
+        trainInputParams['loss_func'] = modified_dice_loss  
+    elif trainInputParams['loss_func'].lower() == 'dice_loss_fg':
+        trainInputParams['loss_func'] = dice_loss_fg
+    elif trainInputParams['loss_func'].lower() == 'modified_dice_loss_fg':
+        trainInputParams['loss_func'] = modified_dice_loss_fg  
+    if 'acc_func' not in trainInputParams:
+        trainInputParams['acc_func'] = metrics.categorical_accuracy
+    elif trainInputParams['acc_func'].lower() == 'categorical_accuracy':
+        trainInputParams['acc_func'] = metrics.categorical_accuracy
     if 'labels_to_train' not in trainInputParams:
         trainInputParams['labels_to_train'] = [1]
     if 'asymmetric' not in trainInputParams:
         trainInputParams['asymmetric'] = True
-    
+    ############## NOT USED, HARD CODED WITHIN DSSE-NET, CHANGE LATER #########
+    if 'group_normalization' not in trainInputParams:
+        trainInputParams['group_normalization'] = False
+    if 'activation_type' not in trainInputParams:
+        trainInputParams['activation_type'] = 'relu'
+    if 'final_activation_type' not in trainInputParams:
+        trainInputParams['final_activation_type'] = 'softmax'
+    ############################################################################
+    if 'AMP' not in trainInputParams:
+        trainInputParams['AMP'] = False
+    if 'XLA' not in trainInputParams:
+        trainInputParams['XLA'] = False 
+
     #Original
-    # determine number of available
+    # determine number of available GPUs
     gpus = tf.config.list_physical_devices('GPU') 
     num_gpus = len(gpus)    
     print('Number of GPUs available  for training: ', num_gpus)
@@ -828,10 +805,10 @@ def train(trainConfigFilePath):
         #Hide GPUs
         if num_gpus > 0: #gpus:
             print("Restricting TensorFlow to use CPU only by hiding GPUs.")
-            #print("Restricting TensorFlow to only use the first GPU.")
+            ####Alternate: print("Restricting TensorFlow to only use the first GPU.")
             try:
                 tf.config.experimental.set_visible_devices([], 'GPU')
-                #tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+                ####Alternate: tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
                 logical_gpus = tf.config.experimental.list_logical_devices('GPU')
                 print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
             except RuntimeError as e:
@@ -867,94 +844,91 @@ def train(trainConfigFilePath):
         os.makedirs(trainInputParams["lastSavedModelFolder"])
     #We are here - so trainInputParams["lastSavedModelFolder"] is a directory
 
-    #Run CV Folds
-    numCVFolds = 5
-    for cvFoldIndex in range(0,numCVFolds):
+    train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                        useDataAugmentationDuringTraining = True,
+                                        batch_size = 1,
+                                        numCVFolds = numCVFolds,
+                                        cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
+                                        isValidationFlag = False,
+                                        verbose=False
+                                                )
 
-        train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                            useDataAugmentationDuringTraining = True,
-                                            batch_size = 1,
-                                            numCVFolds = numCVFolds,
-                                            cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
-                                            isValidationFlag = False,
-                                            verbose=False
-                                                    )
+    val_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
+                                        useDataAugmentationDuringTraining = False,
+                                        batch_size = 1,
+                                        numCVFolds = numCVFolds,
+                                        cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
+                                        isValidationFlag = True,
+                                        verbose=False
+                                        )
+    
+    # count number of training and test cases
+    num_train_cases = train_sequence.__len__()
+    num_val_cases = val_sequence.__len__()
 
-        val_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
-                                            useDataAugmentationDuringTraining = False,
-                                            batch_size = 1,
-                                            numCVFolds = numCVFolds,
-                                            cvFoldIndex = cvFoldIndex, #Can be between 0 to 4
-                                            isValidationFlag = True,
-                                            verbose=False
-                                            )
+    print('Number of train cases: ', num_train_cases)
+    print('Number of test cases: ', num_val_cases)
+    print("labels to train: ", trainInputParams['labels_to_train'])
+    
+    sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+    if 'channels_last' == trainInputParams['data_format']:
+        input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
+        output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
+    else: # 'channels_first'
+        input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
+        output_shape = tuple([1] + sampleCube_dim) # 1 channel output
+
+    # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
+    # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+    # with strategy.scope():
+    
+    # load existing or create new model for this folder
+    thisFoldIntermediateModelFileName = "{:>02d}InterDSSENetModel.h5".format(cvFoldIndex)
+    thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
+    thisFoldIntermediateModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldIntermediateModelFileName)
+    thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+    print(thisFoldIntermediateModelPath)
+    print(thisFoldFinalModelPath)
+
+    if os.path.exists(thisFoldIntermediateModelPath):
+        model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+        print('Loaded model: ' + thisFoldIntermediateModelPath)
+    else:
+        model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
+        optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+        if trainInputParams['AMP']:
+            optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+        model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])
+        model.summary(line_length=140)
         
-        # count number of training and test cases
-        num_train_cases = train_sequence.__len__()
-        num_val_cases = val_sequence.__len__()
+    # TODO: clean up the evaluation callback
+    #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
+    tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
+                            tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
+                                monitor = "loss", save_best_only = True, mode='min')]
 
-        print('Number of train cases: ', num_train_cases)
-        print('Number of test cases: ', num_val_cases)
-        print("labels to train: ", trainInputParams['labels_to_train'])
-        
-        sampleCube_dim = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
-        if 'channels_last' == trainInputParams['data_format']:
-            input_shape = tuple(sampleCube_dim+[2]) # 2 channel CT and PET
-            output_shape = tuple(sampleCube_dim+[1]) # 1 channel output
-        else: # 'channels_first'
-            input_shape = tuple([2] + sampleCube_dim) # 2 channel CT and PET
-            output_shape = tuple([1] + sampleCube_dim) # 1 channel output
+    model.fit(x=train_sequence,
+                        steps_per_epoch = num_train_cases,
+                        max_queue_size = 40,
+                        epochs = trainInputParams['num_training_epochs'],
+                        validation_data = val_sequence,
+                        validation_steps = num_val_cases,
+                        callbacks = train_callbacks,
+                        use_multiprocessing = False,
+                        workers = num_cpus, 
+                        shuffle = True)
+    model.save(thisFoldFinalModelPath,save_format='h5')
 
-        # # distribution strategy (multi-GPU or TPU training), disabled because model.fit 
-        # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
-        # with strategy.scope():
-        
-        # load existing or create new model for this folder
-        thisFoldIntermediateModelFileName = "{:>02d}InterDSSENetModel.h5".format(cvFoldIndex)
-        thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
-        thisFoldIntermediateModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldIntermediateModelFileName)
-        thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
-        print(thisFoldIntermediateModelPath)
-        print(thisFoldFinalModelPath)
 
-        if os.path.exists(thisFoldIntermediateModelPath):
-            model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
-            print('Loaded model: ' + thisFoldIntermediateModelPath)
-        else:
-            model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
-            optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
-            if trainInputParams['AMP']:
-                optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
-            model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'], metrics = [trainInputParams['acc_func']])
-            #model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])
-            model.summary(line_length=140)
-            
-        # TODO: clean up the evaluation callback
-        #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
-        tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
-                             tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
-                                    monitor = "loss", save_best_only = True, mode='min')]
 
-        model.fit(x=train_sequence,
-                            steps_per_epoch = num_train_cases,
-                            max_queue_size = 40,
-                            epochs = trainInputParams['num_training_epochs'],
-                            validation_data = val_sequence,
-                            validation_steps = num_val_cases,
-                            callbacks = train_callbacks,
-                            use_multiprocessing = False,
-                            workers = num_cpus, 
-                            shuffle = True)
-        model.save(thisFoldFinalModelPath,save_format='h5')
-
-def msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-                        numCVFolds = 5,
-                        cvFoldIndex = 0,
-                        savePredictions = True,
-                        out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
-                        thisFoldFinalModelPath = "",
-                        verbose=False):
+def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+                 cvFoldIndex = 0,
+                 numCVFolds = 5,
+                 savePredictions = True,
+                 out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+                 thisFoldFinalModelPath = "",
+                 verbose=False):
     
     #Open configuration
     with open(trainConfigFilePath) as f:
@@ -1048,8 +1022,35 @@ def msd_and_dice_cvFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositori
                     desImage_nii = nib.Nifti1Image(gtv_pred_data, affine=srcImage_nii_aff)
                     desFileName = "predFold{:>02d}_".format(cvFoldIndex) + gtvFiles[i]
                     nib.save(desImage_nii, os.path.join(out_dir,desFileName))
+    
+    return thisFoldFinalModelPath, test_msd, test_dice
 
-                pass
-                #Read original GTV data and get its size since that size sometimes may be larger 
-                # (in slice) than y_true and y_pred
-    pass
+def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+            numCVFolds = 5 ):
+    ##Run CV Folds
+    for cvFoldIndex in range(0,numCVFolds):
+        trainFold(trainConfigFilePath=trainConfigFilePath, cvFoldIndex=cvFoldIndex, numCVFolds = numCVFolds )    
+
+def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+            numCVFolds = 5):
+        listOfModelPaths = []
+        listOfAverageDice = []  
+        listOfAverageMSD = []      
+        for cvFoldIndex in range(0,numCVFolds):
+            thisFoldFinalModelPath, thisFold_test_msd, thisFold_test_dice = evaluateFold(
+                trainConfigFilePath = trainConfigFilePath, 
+                cvFoldIndex = cvFoldIndex,        
+                numCVFolds = numCVFolds,                        
+                savePredictions = True,
+                out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+                thisFoldFinalModelPath = "",
+                verbose=False)
+            listOfModelPaths.append(thisFoldFinalModelPath)
+            listOfAverageDice.append(np.mean(thisFold_test_dice))
+            listOfAverageMSD.append(np.mean(thisFold_test_msd))
+        ensembleWeight =  [r/sum(listOfAverageDice) for r in listOfAverageDice]
+        for idx in range(0,numCVFolds):
+            print(listOfModelPaths[idx], ' AvgDice: ',  listOfAverageDice[idx], ' AvgMSD: ',  
+                         listOfAverageMSD[idx],' ensembleWt ', ensembleWeight[idx])
+        return listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight
+        
