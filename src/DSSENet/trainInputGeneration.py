@@ -312,7 +312,7 @@ def createTrainInputJsonFile(jsonPath):
     #Ranomize patient list
     random.shuffle(patientList)
     numAllPatients = len(patientList)
-    numTrainCVPatients =  round(0.85*numAllPatients)
+    numTrainCVPatients =  round(0.95*numAllPatients)
     numTestPatients = numAllPatients - numTrainCVPatients
     trainConfig['numTrainCVPatients'] = numTrainCVPatients
     trainConfig['trainCVPatientList'] = patientList[0:numTrainCVPatients]

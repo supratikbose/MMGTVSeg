@@ -847,19 +847,19 @@ from DSSENet import DSSE_VNet
 #############################################
 
 ##################################################
-thisFoldFinalModelPath, test_msd, test_dice = DSSE_VNet.evaluateFold(
-    trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-    cvFoldIndex = 1,        
-    numCVFolds = 5,                        
-    savePredictions = True,
-    out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
-    thisFoldFinalModelPath = "",
-    verbose=False)
-
-
-# listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight = DSSE_VNet.evaluate(
+# thisFoldFinalModelPath, test_msd, test_dice = DSSE_VNet.evaluateFold(
 #     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-#             numCVFolds = 5)
+#     cvFoldIndex = 1,        
+#     numCVFolds = 5,                        
+#     savePredictions = True,
+#     out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+#     thisFoldFinalModelPath = "",
+#     verbose=False)
+
+
+listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight = DSSE_VNet.evaluate(
+    trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+            numCVFolds = 5)
 ####################################### 
 
 # TODO Changes to be copied into VM 

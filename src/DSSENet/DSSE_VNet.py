@@ -102,6 +102,19 @@ def modified_dice_loss_fg(data_format = 'channels_last'):
         return f
     return loss
 
+def customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper(alpha_dice = 0.4, smooth = 0.00001,data_format = 'channels_last'):
+    def loss(y_true, y_pred):
+        #First compute jaccard dice loss  which is dice loss with squared_denominator
+        f=1 - dice_coef(y_true, y_pred, smooth = smooth, squared_denominator = True, ignore_zero_label = False, data_format=data_format)
+        #Then compute SparseCategoricalCrossentropy loss Using this loss is valid as 
+        # y_true is expected to be an integer corresponding to the label [0 for label 0, 1 for label 1,...]
+        # and not an one-hot-encoding representation. y_pred here is the predicted probability since it is 
+        #output of a softmax layer. So it is NOT logit.
+        g = K.sparse_categorical_crossentropy(K.cast(y_true,'int8'), y_pred,
+                                            from_logits=False, 
+                                            axis=-1 if 'channels_last' == data_format else 1)
+        return alpha_dice * f + (1.0 - alpha_dice)*g
+    return loss
 
 
 #################   Metrics ##############
@@ -765,7 +778,7 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
         f.close()
 
     if 'loss_func' not in trainInputParams:
-        trainInputParams['loss_func'] = modified_dice_loss
+        trainInputParams['loss_func'] = customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper #modified_dice_loss
     elif trainInputParams['loss_func'].lower() == 'dice_loss':
         trainInputParams['loss_func'] = dice_loss
     elif trainInputParams['loss_func'].lower() == 'modified_dice_loss':
@@ -891,7 +904,7 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
     print(thisFoldFinalModelPath)
 
     if os.path.exists(thisFoldIntermediateModelPath):
-        model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+        model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
         print('Loaded model: ' + thisFoldIntermediateModelPath)
     else:
         model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
@@ -969,7 +982,7 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
     numBatches = val_sequence.__len__()
 
     #load model
-    model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss})
+    model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
     print('Loaded model: ' + thisFoldFinalModelPath)
 
     #Evaluation and writing loop
@@ -1036,7 +1049,7 @@ def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg
         listOfModelPaths = []
         listOfAverageDice = []  
         listOfAverageMSD = []      
-        for cvFoldIndex in range(0,numCVFolds):
+        for cvFoldIndex in range(0,numCVFolds): #3
             thisFoldFinalModelPath, thisFold_test_msd, thisFold_test_dice = evaluateFold(
                 trainConfigFilePath = trainConfigFilePath, 
                 cvFoldIndex = cvFoldIndex,        
@@ -1049,7 +1062,7 @@ def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg
             listOfAverageDice.append(np.mean(thisFold_test_dice))
             listOfAverageMSD.append(np.mean(thisFold_test_msd))
         ensembleWeight =  [r/sum(listOfAverageDice) for r in listOfAverageDice]
-        for idx in range(0,numCVFolds):
+        for idx in range(0,numCVFolds): #3
             print(listOfModelPaths[idx], ' AvgDice: ',  listOfAverageDice[idx], ' AvgMSD: ',  
                          listOfAverageMSD[idx],' ensembleWt ', ensembleWeight[idx])
         return listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight
