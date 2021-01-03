@@ -857,9 +857,19 @@ from DSSENet import DSSE_VNet
 #     verbose=False)
 
 
-listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight = DSSE_VNet.evaluate(
-    trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-            numCVFolds = 5)
+# listOfModelPaths, listOfAverageDice, listOfAverageMSD, listOfEnsembleWeights = DSSE_VNet.evaluate(
+#     trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+#     numCVFolds = 5,
+#     trainModelEnsemblePath_out = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json')
+
+listOfTestPatientNames = ["CHUS097", "CHUM021", "CHGJ036", "CHUS026", "CHUM019", "CHUS015", "CHUM036", "CHUM022", "CHUM038", "CHUS013"]
+DSSE_VNet.ensembleBasedPrediction(listOfTestPatientNames,
+            resampledTestDataLocation = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_train/resampled',
+            groundTruthPresent = True,
+            trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+            trainModelEnsemblePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json',
+            out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/')
+
 ####################################### 
 
 # TODO Changes to be copied into VM 

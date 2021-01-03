@@ -116,7 +116,6 @@ def customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper(alpha_dice 
         return alpha_dice * f + (1.0 - alpha_dice)*g
     return loss
 
-
 #################   Metrics ##############
 def surface_distance_array(test_labels, gt_labels, sampling=1, connectivity=1):
     input_1 = np.atleast_1d(test_labels.astype(np.bool))
@@ -408,7 +407,7 @@ class DSSENet_Generator(Sequence):
             ctData = ctData.astype(np.float32)        
             #Clamp and normalize PET Data
             np.clip(ptData, self.trainConfig["pt_low"], self.trainConfig["pt_high"], out= ptData)
-            ptData = ptData / 1.0 #<-- This will put values between 0 and 2.5
+            ptData = ptData / 1.0 #<-- if 10.0 is used This will put values between 0 and 2.5
             ptData = ptData.astype(np.float32)
             #For gtv mask make it integer
             gtvData = gtvData.astype(np.int16) #int16 #float32
@@ -767,16 +766,7 @@ def DSSEVNet(input_shape, dropout_prob = 0.25, data_format='channels_last'):
     model = Model(img_input, _Final)
     return model
 
-
-############### Model train and evaluate function #################
-def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
-              cvFoldIndex=0, 
-              numCVFolds = 5):
-    # load trainInputParams  from JSON config files
-    with open(trainConfigFilePath) as f:
-        trainInputParams = json.load(f)
-        f.close()
-
+def sanityCheckTrainParams(trainInputParams):
     if 'loss_func' not in trainInputParams:
         trainInputParams['loss_func'] = customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper #modified_dice_loss
     elif trainInputParams['loss_func'].lower() == 'dice_loss':
@@ -806,7 +796,20 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
     if 'AMP' not in trainInputParams:
         trainInputParams['AMP'] = False
     if 'XLA' not in trainInputParams:
-        trainInputParams['XLA'] = False 
+        trainInputParams['XLA'] = False   
+
+    return trainInputParams
+
+############### Model train and evaluate function #################
+def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+              cvFoldIndex=0, 
+              numCVFolds = 5):
+    # load trainInputParams  from JSON config files
+    with open(trainConfigFilePath) as f:
+        trainInputParams = json.load(f)
+        f.close()
+
+    trainInputParams = sanityCheckTrainParams(trainInputParams)
 
     #Original
     # determine number of available GPUs
@@ -904,7 +907,13 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
     print(thisFoldFinalModelPath)
 
     if os.path.exists(thisFoldIntermediateModelPath):
-        model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
+        #This line is giving bug with custom loss objects
+        # model = tf.keras.models.load_model(thisFoldIntermediateModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
+        model = tf.keras.models.load_model(thisFoldIntermediateModelPath,compile=False)
+        optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+        if trainInputParams['AMP']:
+            optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+        model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])        
         print('Loaded model: ' + thisFoldIntermediateModelPath)
     else:
         model = DSSEVNet(input_shape=input_shape, dropout_prob = 0.25, data_format=trainInputParams['data_format'])                              
@@ -947,6 +956,7 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
     with open(trainConfigFilePath) as f:
         trainInputParams = json.load(f)
         f.close()
+    trainInputParams = sanityCheckTrainParams(trainInputParams)
     
     #Get location of model file based on the CVFold index if it is not already provided
     if 0 == len(thisFoldFinalModelPath):
@@ -982,7 +992,13 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
     numBatches = val_sequence.__len__()
 
     #load model
-    model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
+    #This line is giving bug with custom loss objects
+    # model = tf.keras.models.load_model(thisFoldFinalModelPath, custom_objects={'dice_loss_fg': dice_loss_fg, 'modified_dice_loss': modified_dice_loss, 'customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper': customMultiLabelJaccardDiceAndCategoricalCrossEntropyLossWrapper})
+    model = tf.keras.models.load_model(thisFoldFinalModelPath,compile=False)
+    optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+    if trainInputParams['AMP']:
+        optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+    model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])        
     print('Loaded model: ' + thisFoldFinalModelPath)
 
     #Evaluation and writing loop
@@ -1045,7 +1061,8 @@ def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/in
         trainFold(trainConfigFilePath=trainConfigFilePath, cvFoldIndex=cvFoldIndex, numCVFolds = numCVFolds )    
 
 def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-            numCVFolds = 5):
+            numCVFolds = 5,
+            trainModelEnsemblePath_out = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json'):
         listOfModelPaths = []
         listOfAverageDice = []  
         listOfAverageMSD = []      
@@ -1061,9 +1078,186 @@ def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg
             listOfModelPaths.append(thisFoldFinalModelPath)
             listOfAverageDice.append(np.mean(thisFold_test_dice))
             listOfAverageMSD.append(np.mean(thisFold_test_msd))
-        ensembleWeight =  [r/sum(listOfAverageDice) for r in listOfAverageDice]
+        listOfEnsembleWeights =  [r/sum(listOfAverageDice) for r in listOfAverageDice]
         for idx in range(0,numCVFolds): #3
             print(listOfModelPaths[idx], ' AvgDice: ',  listOfAverageDice[idx], ' AvgMSD: ',  
-                         listOfAverageMSD[idx],' ensembleWt ', ensembleWeight[idx])
-        return listOfModelPaths, listOfAverageDice, listOfAverageMSD, ensembleWeight
+                         listOfAverageMSD[idx],' ensembleWt ', listOfEnsembleWeights[idx])
+        evalDict = {}
+        evalDict['listOfModelPaths'] = listOfModelPaths
+        evalDict['listOfEnsembleWeights'] = listOfEnsembleWeights
+        evalDict['listOfAverageDice'] = listOfAverageDice
+        evalDict['listOfAverageMSD'] = listOfAverageMSD
+        with open(trainModelEnsemblePath_out, 'w') as fp:
+                json.dump(evalDict, fp, ) #, indent='' #, indent=4
+                fp.close()
+        return listOfModelPaths, listOfAverageDice, listOfAverageMSD, listOfEnsembleWeights
         
+def ensembleBasedPrediction(listOfTestPatientNames,
+        resampledTestDataLocation = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_train/resampled',
+        groundTruthPresent = False,
+        trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+        trainModelEnsemblePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json',
+        out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/'):
+
+    #Open configuration
+    with open(trainConfigFilePath) as f:
+        trainInputParams = json.load(f)
+        f.close()
+    trainInputParams = sanityCheckTrainParams(trainInputParams)
+    #Open ensembles
+    with open(trainModelEnsemblePath) as f:
+        trainModelEnsembleParams = json.load(f)
+        f.close()
+
+    if groundTruthPresent:
+        groundTruthTestComparison = []
+        diceSum = 0.0
+    #Load list of models
+    listOfModels = []
+    for modelPath in trainModelEnsembleParams['listOfModelPaths']:
+        model = tf.keras.models.load_model(modelPath,compile=False)
+        optimizer = tf.keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, decay=0.0)        
+        if trainInputParams['AMP']:
+            optimizer = tf.compat.v1.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+        model.compile(optimizer = optimizer, loss = trainInputParams['loss_func'](data_format=trainInputParams['data_format']), metrics = [trainInputParams['acc_func']])        
+        print('Loaded model: ' + modelPath)
+        listOfModels.append(model)
+
+    #The cubes are going to be arranged as depth-index, rowIndex, col-Index    
+    cube_size = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
+    DepthRange = slice(0, cube_size[0])
+    RowRange = slice(0, cube_size[1])
+    ColRange = slice(0, cube_size[1])
+    numLabels = 1 + len(trainInputParams["labels_to_train"]) 
+    if 'channels_last' == trainInputParams['data_format']:
+        X_size = cube_size+[2] # 2 channel CT and PET
+        y_size = cube_size+[numLabels] #  Output 2 labels including 0
+        if groundTruthPresent:
+            y_gt_size = cube_size+[1] #  ground truth has one channel identifying  label of voxel
+
+    else: # 'channels_first'
+        X_size = [2] + cube_size # 2 channel CT and PET
+        y_size = [numLabels] + cube_size # output 2 labels including 0
+        if groundTruthPresent:
+            y_gt_size = [1] + cube_size #  ground truth has one channel identifying  label of voxel
+
+
+    #Read each input and then predict using each model from the list of models
+    for patientName in listOfTestPatientNames:
+        ctFilePath = os.path.join(resampledTestDataLocation, patientName + trainInputParams["suffixList"][0])
+        ptFilePath = os.path.join(resampledTestDataLocation,patientName + trainInputParams["suffixList"][1])
+        if groundTruthPresent:
+            gtvFilePath = os.path.join(resampledTestDataLocation,patientName + trainInputParams["suffixList"][2])
+        print('################################')
+        print(ctFilePath)
+        print(ptFilePath)
+        if groundTruthPresent:
+            print(gtvFilePath)
+
+
+        ctData = np.transpose(nib.load(ctFilePath).get_fdata(), axes=(2,1,0))
+        ptData = np.transpose(nib.load(ptFilePath).get_fdata(), axes=(2,1,0))
+        if groundTruthPresent:
+            gtvData = np.transpose(nib.load(gtvFilePath).get_fdata(), axes=(2,1,0))
+
+        #Clamp and normalize CT data <- simple normalization, just divide by 1000
+        np.clip(ctData, trainInputParams["ct_low"], trainInputParams["ct_high"], out= ctData)
+        ctData = ctData / 1000.0 #<-- This will put values between -1 and 3.1
+        ctData = ctData.astype(np.float32)
+        #Clamp and normalize PET Data
+        np.clip(ptData, trainInputParams["pt_low"], trainInputParams["pt_high"], out= ptData)
+        ptData = ptData / 1.0 #<-- If 10.0 is used This will put values between 0 and 2.5
+        ptData = ptData.astype(np.float32)
+        if groundTruthPresent:
+            #For gtv mask make it integer
+            gtvData = gtvData.astype(np.int16) #int16 #float32
+            # pick specific labels to train (if training labels other than 1s and 0s)
+            if trainInputParams["labels_to_train"] != [1]:
+                temp = np.zeros(shape=gtvData.shape, dtype=gtvData.dtype)
+                new_label_value = 1
+                for lbl in trainInputParams["labels_to_train"]:
+                    ti = (gtvData == lbl)
+                    temp[ti] = new_label_value
+                    new_label_value += 1
+                gtvData = temp
+
+        
+        X = np.zeros(shape = tuple(X_size), dtype = np.float32)    
+        y_pred_softmaxEnsemble = np.zeros(shape = tuple(y_size), dtype = np.float32)
+        if groundTruthPresent:
+            y_gt = np.zeros(shape = tuple(y_gt_size), dtype = np.int16)
+
+        #Concatenate CT and PET data  in X and put X  in batch_X; 
+        # Put GTV (if present) in Y_GT 
+        if 'channels_last' == trainInputParams['data_format']:
+            #Some of the files have extra slices so we fix the range
+            X[:,:,:,0] = ctData[DepthRange, RowRange, ColRange]
+            X[:,:,:,1] = ptData[DepthRange, RowRange, ColRange]
+            if groundTruthPresent:
+                y_gt[:,:,:,0] = gtvData[DepthRange, RowRange, ColRange]
+        else:
+            X[0,:,:,:] = ctData[DepthRange, RowRange, ColRange]
+            X[1,:,:,:] = ptData[DepthRange, RowRange, ColRange]
+            if groundTruthPresent:
+                y_gt[0,:,:,:] = gtvData[DepthRange, RowRange, ColRange]
+        
+        #batch_size of 1. Since batch size is 1 so we are not using batch_Y or batch_Y_GT explicitly anymore
+        batch_X = np.zeros(shape = tuple([1] + X_size), dtype = np.float32)
+        batch_X[0,:,:,:,:] = X
+
+        #predict with each model, multiply by ensemble weight and then add
+        #http://rasbt.github.io/mlxtend/user_guide/classifier/EnsembleVoteClassifier/
+        t = time.time()
+        for model, ensembleWeight in zip(listOfModels,trainModelEnsembleParams['listOfEnsembleWeights']):
+            batch_y_pred_softmax = model.predict(batch_X, batch_size=1)
+            y_pred_softmax = batch_y_pred_softmax[0,...]
+            #y_pred_softmax_list.append(y_pred_softmax)
+            y_pred_softmaxEnsemble += ensembleWeight * y_pred_softmax
+        print('\nInference time for 1 sample with ', len(listOfModels), ' models: ', time.time() - t)
+        #Now do the voting : convert weighted ensemble softmax output for  N-classes (here N= 2, 0 and 1) 
+        # into the class with highest probability
+        if 'channels_last' == trainInputParams['data_format']:
+            y_pred = np.argmax(y_pred_softmaxEnsemble, axis=-1).astype('int16')            
+        else:
+            y_pred = np.argmax(y_pred_softmaxEnsemble, axis=0).astype('int16')
+
+        #Compute msd dice etc if possible
+        if groundTruthPresent:
+            if 'channels_last' == trainInputParams['data_format']:
+                y_gt = np.squeeze(y_gt,axis=-1)
+            else:
+                y_gt = np.squeeze(y_gt,axis=0)
+            #get spacing
+            orgSpacing = SimpleITK.ReadImage(ctFilePath).GetSpacing()
+            tarnsposedSpacing = (orgSpacing[2], orgSpacing[1], orgSpacing[0])
+            [lbls, msd, rms, hd] = surface_distance_multi_label(y_pred, y_gt, sampling=tarnsposedSpacing)
+            dice = dice_multi_label(y_pred, y_gt)
+            print(patientName, ' Surface to surface MSD [mm]: ', np.transpose(msd), ' dice: ', np.transpose(dice))
+            groundTruthTestComparison.append({ 'patientName':patientName, 'SSMSD':np.transpose(msd),  'dice':np.transpose(dice) })
+            diceSum += np.sum(np.transpose(dice))
+
+        #Save output : Use the same affine as ct data as availability of true GTV is not guaranteed
+        #Load original GTV data <--- remember its size can be larger than the sample batch_y_gt[i,:] 
+        srcImage_nii = nib.load(ctFilePath)
+        srcImage_nii_data = srcImage_nii.get_fdata()
+        srcImage_nii_aff  = srcImage_nii.affine   
+        #Transpose  and  create  buffer of same size as srcImage 
+        transposed_srcImage_nii_data = np.transpose(srcImage_nii_data, axes=(2,1,0))
+        transposed_gtv_pred_data = np.zeros(shape = transposed_srcImage_nii_data.shape, dtype = np.int16)
+        predY_shape= y_pred.shape #batch_y_pred[i,:].shape
+        #debug
+        if predY_shape != transposed_srcImage_nii_data.shape:
+            print('***********************************************')
+            print("predY_shape ", predY_shape, " transpose_GTV shape: ", transposed_srcImage_nii_data.shape)
+        transposed_gtv_pred_data[slice(0, predY_shape[0]), slice(0, predY_shape[1]), slice(0, predY_shape[2])] = y_pred #batch_y_pred[i,:]
+        #Transpose back to have same alignment as srcImage
+        gtv_pred_data = np.transpose(transposed_gtv_pred_data, axes=(2,1,0)).astype(np.int8)#srcImage_nii_data.dtype
+        desImage_nii = nib.Nifti1Image(gtv_pred_data, affine=srcImage_nii_aff)
+        desFileName = 'predEnsemble_' + patientName + trainInputParams["suffixList"][2]
+        nib.save(desImage_nii, os.path.join(out_dir,desFileName))
+
+    if groundTruthPresent:
+        print('Average Dice: ', diceSum/len(groundTruthTestComparison))
+        for result in groundTruthTestComparison :
+            print(result)
+    return
