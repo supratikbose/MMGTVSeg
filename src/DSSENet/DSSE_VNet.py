@@ -1062,9 +1062,11 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
 def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
           saveModelDirectory = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels',
           logDir= '/home/user/DMML/CodeAndRepositories/MMGTVSeg',
-          numCVFolds = 5 ):
+          numCVFolds = 5,
+          rangeCVFoldIdStart=0,
+          rangeCVFoldIdEnd=1 ):
     #Run CV Folds
-    for cvFoldIndex in range(0,numCVFolds): #Segmentation fault happened restarting from cvFoldIndex = 2
+    for cvFoldIndex in rangerange(rangeCVFoldIdStart,rangeCVFoldIdEnd):
         trainFold(trainConfigFilePath=trainConfigFilePath,
                   saveModelDirectory = saveModelDirectory,
                   logDir=logDir,
