@@ -32,7 +32,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Conv3D, UpSampling3D, Conv3DTranspose, Activation, Add, Concatenate, BatchNormalization, ELU, SpatialDropout3D, GlobalAveragePooling3D, Reshape, Dense, Multiply,  Permute
 from tensorflow.keras import regularizers, metrics
 from tensorflow.keras.utils import Sequence
-import tensorflow_addons as tfa
+#import tensorflow_addons as tfa
 
 import matplotlib.pyplot as plt
 import time
@@ -407,7 +407,8 @@ class DSSENet_Generator(Sequence):
             ctData = ctData.astype(np.float32)        
             #Clamp and normalize PET Data
             np.clip(ptData, self.trainConfig["pt_low"], self.trainConfig["pt_high"], out= ptData)
-            ptData = ptData / 1.0 #<-- if 10.0 is used This will put values between 0 and 2.5
+            #ptData = ptData / 1.0 #<-- Dividing by 10 will put values between 0 and 2.5
+            ptData = (ptData - np.mean(ptData))/np.std(ptData)
             ptData = ptData.astype(np.float32)
             #For gtv mask make it integer
             gtvData = gtvData.astype(np.int16) #int16 #float32
@@ -802,6 +803,8 @@ def sanityCheckTrainParams(trainInputParams):
 
 ############### Model train and evaluate function #################
 def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+              saveModelDirectory = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels',
+              logDir= '/home/user/DMML/CodeAndRepositories/MMGTVSeg',
               cvFoldIndex=0, 
               numCVFolds = 5):
     # load trainInputParams  from JSON config files
@@ -848,17 +851,17 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
     if (trainInputParams['XLA']):
         tf.config.optimizer.set_jit(True)
 
-    #Make sure trainInputParams["lastSavedModelFolder"] exists and it is a directory
+    #Make sure saveModelDirectory exists and it is a directory
     #If it does not exist, create it.
-    if os.path.exists(trainInputParams["lastSavedModelFolder"]):
+    if os.path.exists(saveModelDirectory):
         #Check if it is a directory or not
-        if os.path.isfile(trainInputParams["lastSavedModelFolder"]): 
-            print('Error: ', trainInputParams["lastSavedModelFolder"],  ' points to a file. It should be a directory. Exisitng')
+        if os.path.isfile(saveModelDirectory): 
+            print('Error: ', saveModelDirectory,  ' points to a file. It should be a directory. Exisitng')
             sys.exit()    
     else:
         #create 
-        os.makedirs(trainInputParams["lastSavedModelFolder"])
-    #We are here - so trainInputParams["lastSavedModelFolder"] is a directory
+        os.makedirs(saveModelDirectory)
+    #We are here - so saveModelDirectory is a directory
 
     train_sequence = DSSENet_Generator(trainConfigFilePath = trainConfigFilePath, 
                                         useDataAugmentationDuringTraining = True,
@@ -901,8 +904,8 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
     # load existing or create new model for this folder
     thisFoldIntermediateModelFileName = "{:>02d}InterDSSENetModel.h5".format(cvFoldIndex)
     thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
-    thisFoldIntermediateModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldIntermediateModelFileName)
-    thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+    thisFoldIntermediateModelPath = os.path.join(saveModelDirectory,thisFoldIntermediateModelFileName)
+    thisFoldFinalModelPath = os.path.join(saveModelDirectory,thisFoldFinalModelFileName)
     print(thisFoldIntermediateModelPath)
     print(thisFoldFinalModelPath)
 
@@ -925,7 +928,8 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
         
     # TODO: clean up the evaluation callback
     #tb_logdir = './logs/' + os.path.basename(trainInputParams['fname'])
-    tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    #tb_logdir = './logs/' + os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tb_logdir = os.path.join(logDir, os.path.splitext(os.path.basename(thisFoldIntermediateModelPath))[0] + '/' + datetime.now().strftime("%Y%m%d-%H%M%S"))
     train_callbacks = [tf.keras.callbacks.TensorBoard(log_dir = tb_logdir),
                             tf.keras.callbacks.ModelCheckpoint(thisFoldIntermediateModelPath, 
                                 monitor = "loss", save_best_only = True, mode='min')]
@@ -944,7 +948,8 @@ def trainFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSe
 
 
 
-def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
+def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+                 saveModelDirectory = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels',
                  cvFoldIndex = 0,
                  numCVFolds = 5,
                  savePredictions = True,
@@ -957,11 +962,11 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
         trainInputParams = json.load(f)
         f.close()
     trainInputParams = sanityCheckTrainParams(trainInputParams)
-    
+
     #Get location of model file based on the CVFold index if it is not already provided
     if 0 == len(thisFoldFinalModelPath):
         thisFoldFinalModelFileName = "{:>02d}FinalDSSENetModel.h5".format(cvFoldIndex)
-        thisFoldFinalModelPath = os.path.join(trainInputParams["lastSavedModelFolder"],thisFoldFinalModelFileName)
+        thisFoldFinalModelPath = os.path.join(saveModelDirectory,thisFoldFinalModelFileName)
     print(thisFoldFinalModelPath)
     
     #Make sure model file exists
@@ -1054,32 +1059,41 @@ def evaluateFold(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGT
     
     return thisFoldFinalModelPath, test_msd, test_dice
 
-def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-            numCVFolds = 5 ):
-    ##Run CV Folds
-    for cvFoldIndex in range(0,numCVFolds):
-        trainFold(trainConfigFilePath=trainConfigFilePath, cvFoldIndex=cvFoldIndex, numCVFolds = numCVFolds )    
+def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+          saveModelDirectory = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels',
+          logDir= '/home/user/DMML/CodeAndRepositories/MMGTVSeg',
+          numCVFolds = 5 ):
+    #Run CV Folds
+    for cvFoldIndex in range(0,numCVFolds): #Segmentation fault happened restarting from cvFoldIndex = 2
+        trainFold(trainConfigFilePath=trainConfigFilePath,
+                  saveModelDirectory = saveModelDirectory,
+                  logDir=logDir,
+                  cvFoldIndex=cvFoldIndex, 
+                  numCVFolds = numCVFolds )    
 
-def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json', 
-            numCVFolds = 5,
-            trainModelEnsemblePath_out = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json'):
+def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
+             saveModelDirectory = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/DSSEModels',
+             out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+             numCVFolds = 5,
+             trainModelEnsembleJsonPath_out = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json'):
         listOfModelPaths = []
         listOfAverageDice = []  
         listOfAverageMSD = []      
-        for cvFoldIndex in range(0,numCVFolds): #3
+        for cvFoldIndex in range(0,numCVFolds):
             thisFoldFinalModelPath, thisFold_test_msd, thisFold_test_dice = evaluateFold(
-                trainConfigFilePath = trainConfigFilePath, 
+                trainConfigFilePath = trainConfigFilePath,
+                saveModelDirectory = saveModelDirectory,
                 cvFoldIndex = cvFoldIndex,        
                 numCVFolds = numCVFolds,                        
                 savePredictions = True,
-                out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/',
+                out_dir = out_dir,
                 thisFoldFinalModelPath = "",
                 verbose=False)
             listOfModelPaths.append(thisFoldFinalModelPath)
             listOfAverageDice.append(np.mean(thisFold_test_dice))
             listOfAverageMSD.append(np.mean(thisFold_test_msd))
         listOfEnsembleWeights =  [r/sum(listOfAverageDice) for r in listOfAverageDice]
-        for idx in range(0,numCVFolds): #3
+        for idx in range(0,numCVFolds):
             print(listOfModelPaths[idx], ' AvgDice: ',  listOfAverageDice[idx], ' AvgMSD: ',  
                          listOfAverageMSD[idx],' ensembleWt ', listOfEnsembleWeights[idx])
         evalDict = {}
@@ -1087,16 +1101,16 @@ def evaluate(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg
         evalDict['listOfEnsembleWeights'] = listOfEnsembleWeights
         evalDict['listOfAverageDice'] = listOfAverageDice
         evalDict['listOfAverageMSD'] = listOfAverageMSD
-        with open(trainModelEnsemblePath_out, 'w') as fp:
+        with open(trainModelEnsembleJsonPath_out, 'w') as fp:
                 json.dump(evalDict, fp, ) #, indent='' #, indent=4
                 fp.close()
         return listOfModelPaths, listOfAverageDice, listOfAverageMSD, listOfEnsembleWeights
-        
+
 def ensembleBasedPrediction(listOfTestPatientNames,
         resampledTestDataLocation = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_train/resampled',
         groundTruthPresent = False,
         trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/input/trainInput_DSSENet.json',
-        trainModelEnsemblePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json',
+        trainModelEnsembleJsonPath_in = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/trainModelCVEval_DSSENet.json',
         out_dir = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/evaluate_test/'):
 
     #Open configuration
@@ -1105,7 +1119,7 @@ def ensembleBasedPrediction(listOfTestPatientNames,
         f.close()
     trainInputParams = sanityCheckTrainParams(trainInputParams)
     #Open ensembles
-    with open(trainModelEnsemblePath) as f:
+    with open(trainModelEnsembleJsonPath_in) as f:
         trainModelEnsembleParams = json.load(f)
         f.close()
 
@@ -1261,3 +1275,4 @@ def ensembleBasedPrediction(listOfTestPatientNames,
         for result in groundTruthTestComparison :
             print(result)
     return
+        
