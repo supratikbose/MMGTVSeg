@@ -289,7 +289,7 @@ class DSSENet_Generator(Sequence):
             print('suffixList: ', self.trainConfig["suffixList"])
             print('patientVol_width: ', self.trainConfig["patientVol_width"])
             print('patientVol_Height: ', self.trainConfig["patientVol_Height"])
-            print('change_intensity: ', self.trainConfig["patientVol_Depth"]) 
+            print('patientVol_Depth: ', self.trainConfig["patientVol_Depth"]) 
             print('ct_low: ', self.trainConfig["ct_low"])
             print('ct_high: ', self.trainConfig["ct_high"])
             print('pt_low: ', self.trainConfig["pt_low"])
