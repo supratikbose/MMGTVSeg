@@ -1066,7 +1066,7 @@ def train(trainConfigFilePath = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/in
           rangeCVFoldIdStart=0,
           rangeCVFoldIdEnd=1 ):
     #Run CV Folds
-    for cvFoldIndex in rangerange(rangeCVFoldIdStart,rangeCVFoldIdEnd):
+    for cvFoldIndex in range(rangeCVFoldIdStart,rangeCVFoldIdEnd):
         trainFold(trainConfigFilePath=trainConfigFilePath,
                   saveModelDirectory = saveModelDirectory,
                   logDir=logDir,
