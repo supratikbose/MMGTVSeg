@@ -275,7 +275,7 @@ class DSSENet_Generator(Sequence):
         self.cube_size = [self.trainConfig["patientVol_Depth"], self.trainConfig["patientVol_Height"], self.trainConfig["patientVol_width"]]
         self.DepthRange = slice(0, self.cube_size[0])
         self.RowRange = slice(0, self.cube_size[1])
-        self.ColRange = slice(0, self.cube_size[1])
+        self.ColRange = slice(0, self.cube_size[2])
         if 'channels_last' == self.trainConfig['data_format']:
             self.X_size = self.cube_size+[2] # 2 channel CT and PET
             self.y_size = self.cube_size+[1] # 1 channel output
