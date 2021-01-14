@@ -1143,7 +1143,7 @@ def ensembleBasedPrediction(listOfTestPatientNames,
     cube_size = [trainInputParams["patientVol_Depth"], trainInputParams["patientVol_Height"], trainInputParams["patientVol_width"]]
     DepthRange = slice(0, cube_size[0])
     RowRange = slice(0, cube_size[1])
-    ColRange = slice(0, cube_size[1])
+    ColRange = slice(0, cube_size[2])
     numLabels = 1 + len(trainInputParams["labels_to_train"]) 
     if 'channels_last' == trainInputParams['data_format']:
         X_size = cube_size+[2] # 2 channel CT and PET
