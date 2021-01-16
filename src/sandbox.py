@@ -771,6 +771,34 @@ from DSSENet import DSSE_VNet
 # for idx in range(0,numBatches):
 #    batchX, batchY = trainGenerator.__getitem__(idx)    
 
+############ Rename predicted files ###############
+# patientFolder = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/output/blind_test'
+# pattern1 = 'predEnsemble_'
+# pattern2 = '_ct_gtvt.nii.gz'
+# patientList = [((os.path.basename(f)).replace(pattern2,'')).replace(pattern1,'') \
+#       for f in glob.glob(patientFolder + '/*_ct_gtvt.nii.gz', recursive=False) ]
+# pass
+# for f in patientList:
+#     old_file = os.path.join(patientFolder, pattern1 + f + pattern2)
+#     new_file = os.path.join(patientFolder, f + pattern2)
+#     os.rename(old_file, new_file)
 
+############ Test path for cli_get_resolution ############
+# input_folder = 'data/hecktor_test/hecktor_nii_test/'
+# output_file = 'data/hecktor_test/original_resolution_ct.csv'
+# extension = '.nii.gz'
+# patientList = [f for f in glob.glob(input_folder + '/**/*_ct' + extension, recursive=True)]
+# patientNameList = [f.split('/')[-2] for f in glob.glob(input_folder + '/**/*_ct' + extension, recursive=True)]
+# pass
 
-
+############ Prior to submission CHUV001_ct_gtvt.nii.gz should be changed to CHUV001.nii.gz#################
+patientFolder = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_test/segmentation_output_tosubmit'
+pattern1 = '_ct_gtvt.nii.gz'
+pattern2 = '.nii.gz'
+patientList = [(os.path.basename(f)).replace(pattern1,'') \
+      for f in glob.glob(patientFolder + '/*_ct_gtvt.nii.gz', recursive=False) ]
+pass
+for f in patientList:
+    old_file = os.path.join(patientFolder, f + pattern1)
+    new_file = os.path.join(patientFolder, f + pattern2)
+    os.rename(old_file, new_file)

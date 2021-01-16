@@ -3,18 +3,20 @@ import glob
 import click
 import logging
 from pathlib import Path
-from dotenv import find_dotenv, load_dotenv
+#from dotenv import find_dotenv, load_dotenv
 import pandas as pd
 import SimpleITK as sitk
 
+input_folder = 'data/hecktor_test/hecktor_nii_test/'
+output_file = 'data/hecktor_test/original_resolution_ct.csv'
 
 @click.command()
 @click.argument('input_folder',
                 type=click.Path(exists=True),
-                default='data/processed')
+                default=input_folder)#'data/processed'
 @click.argument('output_file',
                 type=click.Path(),
-                default='data/original_resolution_ct.csv')
+                default=output_file)#'data/original_resolution_ct.csv'
 @click.option('--extension', type=click.STRING, default='.nii.gz')
 def main(input_folder, output_file, extension):
     """Command Line Inteface used to generate a csv file containing the
@@ -30,6 +32,7 @@ def main(input_folder, output_file, extension):
     resolution_dict = pd.DataFrame()
     for f in glob.glob(input_folder + '/**/*_ct' + extension, recursive=True):
         patient_name = f.split('/')[-2]
+        print(patient_name)
         sitk_image = sitk.ReadImage(f)
         px_spacing = sitk_image.GetSpacing()
         resolution_dict = resolution_dict.append(
@@ -45,15 +48,15 @@ def main(input_folder, output_file, extension):
 
 
 if __name__ == '__main__':
-    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_fmt)
-    logging.captureWarnings(True)
+    # log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    # logging.basicConfig(level=logging.INFO, format=log_fmt)
+    # logging.captureWarnings(True)
 
-    # not used in this stub but often useful for finding various files
-    project_dir = Path(__file__).resolve().parents[2]
+    # # not used in this stub but often useful for finding various files
+    # project_dir = Path(__file__).resolve().parents[2]
 
-    # find .env automagically by walking up directories until it's found, then
-    # load up the .env entries as environment variables
-    load_dotenv(find_dotenv())
+    # # find .env automagically by walking up directories until it's found, then
+    # # load up the .env entries as environment variables
+    # load_dotenv(find_dotenv())
 
     main()

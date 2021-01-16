@@ -126,9 +126,15 @@ from src.resampling.resampling import Resampler
 
 
 # Default paths
-path_in = 'data/hecktor_train/hecktor_nii/'
-path_out = 'data/hecktor_train/resampled/'
-path_bb = 'data/hecktor_train/bbox.csv'
+
+path_in = 'data/hecktor_test/hecktor_nii_test/'
+path_out = 'data/hecktor_test/resampled_test/'
+path_bb = 'data/hecktor_test/bbox_test.csv'
+
+# path_in = 'data/hecktor_train/hecktor_nii/'
+# path_out = 'data/hecktor_train/resampled/'
+# path_bb = 'data/hecktor_train/bbox.csv'
+
 # path_in = '/home/user/DMML/Data/HeadNeck_PET_CT/HecktorData/hecktor_train/hecktor_nii/'
 # path_out = '/home/user/DMML/Data/HeadNeck_PET_CT/HecktorData/hecktor_train/resampled/'
 # path_bb = '/home/user/DMML/Data/HeadNeck_PET_CT/HecktorData/hecktor_train/bbox.csv'

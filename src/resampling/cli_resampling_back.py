@@ -6,13 +6,22 @@ import click
 import logging
 import pandas as pd
 
+import sys
+#sys.path.append("/home/user/DMML/CodeAndRepositories/MMGTVSeg")
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+import src
+
 from src.resampling.resampling import Resampler
 
-path_input = "segmentation_output_renamed"
-path_output = "data/segmentation_output_tosubmit"
-path_bb = "data/bbox.csv"
-path_res = "data/original_resolution_ct.csv"
+path_input = "data/hecktor_test/segmentation_output_renamed"
+path_output = "data/hecktor_test/segmentation_output_tosubmit"
+path_bb = "data/hecktor_test/bbox_test.csv"
+path_res = "data/hecktor_test/original_resolution_ct.csv"
 
+# path_input = "segmentation_output_renamed"
+# path_output = "data/segmentation_output_tosubmit"
+# path_bb = "data/bbox.csv"
+# path_res = "data/original_resolution_ct.csv"
 
 @click.command()
 @click.argument('input_folder',

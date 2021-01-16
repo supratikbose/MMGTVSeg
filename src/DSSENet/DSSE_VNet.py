@@ -1120,6 +1120,16 @@ def ensembleBasedPrediction(listOfTestPatientNames,
         trainInputParams = json.load(f)
         f.close()
     trainInputParams = sanityCheckTrainParams(trainInputParams)
+    
+    #Make sure output directory exists 
+    if os.path.exists(out_dir):
+        #Check if it is a directory or not
+        if os.path.isfile(out_dir): 
+            sys.exit(out_dir, ' is a file and not directory. Exiting.') 
+    else:
+        #create 
+        os.makedirs(out_dir)
+    
     #Open ensembles
     with open(trainModelEnsembleJsonPath_in) as f:
         trainModelEnsembleParams = json.load(f)
