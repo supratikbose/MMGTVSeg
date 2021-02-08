@@ -219,6 +219,133 @@ def COM(label):
         COMz=np.mean(indices[2])
         return COMx, COMy, COMz
 
+#############
+def checkFolderExistenceAndCreate(folderPath):
+    #if folderPath does not exist create it
+    if os.path.exists(folderPath):
+        #Check if it is a directory or not
+        if os.path.isfile(folderPath): 
+            sys.exit(folderPath, ' is a file and not directory. Exiting.') 
+    else:
+        #create 
+        os.makedirs(folderPath)
+
+def getDimensions(cube_size, labels_to_train_list, groundTruthPresentFlag, data_format):
+    DepthRange, RowRange, ColRange, numLabels, X_size, y_size, y_gt_size = \
+        None, None, None, None, None, None, None
+    DepthRange = slice(0, cube_size[0])
+    RowRange = slice(0, cube_size[1])
+    ColRange = slice(0, cube_size[2])
+    numLabels = 1 + len(labels_to_train_list) 
+    if 'channels_last' == data_format:
+        X_size = cube_size+[2] # 2 channel CT and PET
+        y_size = cube_size+[numLabels] #  Output 2 labels including 0
+        if groundTruthPresentFlag:
+            y_gt_size = cube_size+[1] #  ground truth has one channel identifying  label of voxel
+    else: # 'channels_first'
+        X_size = [2] + cube_size # 2 channel CT and PET
+        y_size = [numLabels] + cube_size # output 2 labels including 0
+        if groundTruthPresentFlag:
+            y_gt_size = [1] + cube_size #  ground truth has one channel identifying  label of voxel    
+    return DepthRange, RowRange, ColRange, numLabels, X_size, y_size, y_gt_size
+
+def readAndScaleImageData(fileName, folderName, clipFlag, clipLow, clipHigh, scaleLag, scaleFactor,\
+                          meanSDNormalizeFlag, finalDataType, \
+                          isLabelData, labels_to_train_list, verbose=False): 
+    returnNow = False
+    #check file existence
+    filePath = os.path.join(folderName, fileName)            
+    if os.path.exists(filePath):
+        pass
+    else:
+        print(filePath, ' does not exist')  
+        returnNow = True  
+    if returnNow:
+        sys.exit() 
+    #We are here => returnNow = False
+    #Also note #axes: depth, height, width
+    fileData = np.transpose(nib.load(filePath).get_fdata(), axes=(2,1,0))  
+    #Debug code
+    if verbose:
+        dataMin = fileData.min()
+        dataMax = fileData.max()
+        print('fileName - shape - type -min -max: ', fileName, ' ', fileData.shape, ' ', fileData.dtype, ' ', dataMin, ' ', dataMax)
+    #Clamp                          
+    if True == clipFlag:
+        np.clip(fileData, clipLow, clipHigh, out= fileData)
+    #Scale   
+    if True == scaleLag:
+        fileData = fileData / scaleFactor
+    #mean SD Normalization
+    if True == meanSDNormalizeFlag:
+        fileData = (fileData - np.mean(fileData))/np.std(fileData)
+    #Type conversion
+    fileData = fileData.astype(finalDataType)
+    if True == isLabelData:
+        # pick specific labels to train (if training labels other than 1s and 0s)
+        if labels_to_train_list != [1]:
+            temp = np.zeros(shape=fileData.shape, dtype=fileData.dtype)
+            new_label_value = 1
+            for lbl in labels_to_train_list: 
+                ti = (fileData == lbl)
+                temp[ti] = new_label_value
+                new_label_value += 1
+            fileData = temp
+    return fileData
+
+def createSize1Batch(DepthRange, RowRange, ColRange, X_size, ctData, ptData, groundTruthPresent, y_gt_size, gtvData, data_format):
+        X = np.zeros(shape = tuple(X_size), dtype = np.float32)    
+        y_gt = None
+        if groundTruthPresent:
+            y_gt = np.zeros(shape = tuple(y_gt_size), dtype = np.int16)
+
+        #Concatenate CT and PET data  in X and put X  in batch_X; 
+        # Put GTV (if present) in Y_GT 
+        if 'channels_last' == data_format:
+            #Some of the files have extra slices so we fix the range
+            X[:,:,:,0] = ctData[DepthRange, RowRange, ColRange]
+            X[:,:,:,1] = ptData[DepthRange, RowRange, ColRange]
+            if groundTruthPresent:
+                y_gt[:,:,:,0] = gtvData[DepthRange, RowRange, ColRange]
+        else:
+            X[0,:,:,:] = ctData[DepthRange, RowRange, ColRange]
+            X[1,:,:,:] = ptData[DepthRange, RowRange, ColRange]
+            if groundTruthPresent:
+                y_gt[0,:,:,:] = gtvData[DepthRange, RowRange, ColRange]
+        
+        #batch_size of 1. Since batch size is 1 so we are not using batch_Y or batch_Y_GT explicitly anymore
+        batch_X = np.zeros(shape = tuple([1] + X_size), dtype = np.float32)
+        batch_X[0,:,:,:,:] = X    
+        return batch_X, y_gt
+
+def evaluateAndSavePredictionHelper(y_pred,
+    evaluateFlag, key,  y_gt, spacingForEvaluation, 
+    saveFlag, destinationFilePath, modelImage_nii):
+    dice, msd, lbls, rms, hd = None, None, None, None, None
+    if True == evaluateFlag:
+        [lbls, msd, rms, hd] = \
+            surface_distance_multi_label(y_pred, y_gt, sampling=spacingForEvaluation)
+        dice = dice_multi_label(y_pred, y_gt)
+        print(key, ' Surface to surface MSD [mm]: ', np.transpose(msd), ' dice: ', np.transpose(dice))
+    if True == saveFlag:
+        modelImage_nii_data = modelImage_nii.get_fdata()
+        modelImage_nii_aff  = modelImage_nii.affine   
+        #Transpose  and  create  buffer of same size as modelImage 
+        transposed_modelImage_nii_data = np.transpose(modelImage_nii_data, axes=(2,1,0))
+        transposed_pred_data = np.zeros(shape = transposed_modelImage_nii_data.shape, dtype = np.int16)
+        predY_shape= y_pred.shape 
+        #debug
+        if predY_shape != transposed_modelImage_nii_data.shape:
+            print('***********************************************')
+            print("predY_shape ", predY_shape, " transpose_GTV shape: ", transposed_modelImage_nii_data.shape)
+        transposed_pred_data[slice(0, predY_shape[0]), slice(0, predY_shape[1]), slice(0, predY_shape[2])] \
+            = y_pred 
+        #Transpose back to have same alignment as modelImage
+        pred_data = np.transpose(transposed_pred_data, axes=(2,1,0)).astype(np.int8)
+        desImage_nii = nib.Nifti1Image(pred_data, affine=modelImage_nii_aff)
+        nib.save(desImage_nii, destinationFilePath)        
+    return dice, msd, lbls, rms, hd 
+
 ###############  data generator ##############
 class DSSENet_Generator(Sequence): 
     def __init__(self,
