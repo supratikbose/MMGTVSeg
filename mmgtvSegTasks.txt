@@ -1,0 +1,41 @@
+Interactive segmentation Plan
+
+Folder plan:
+--Data
+----Raw data
+----Training data
+----Interactive scribble data 
+----Output data
+--Config-JSON
+--src
+----data pre/post processing helpers
+----losses and metrics and ensembler
+----interactive-seg UI
+----interactive seg algorithms & helpers ( GC, bayesian, auto-scribble, read from UI, fineTune)
+----model and generator
+----Notebooks(glue)
+--logs and models
+----logs
+----models
+
+Implementation TODO
+* Raw data ---> data resampling and preprocessing, augmentation routines ---> Training data
+* Json generation (a) Hyper parameter tuning (b) final training 
+* pre processing and augmentation functions
+* model
+* generator
+* losses and metrics and ensemblers
+* hyperparameter tuner
+* post processing functions
+* auto-scribble generator functions
+* interactive-UI
+* interactive seg algorithms & helpers : graphcut, bayesian, auto-scribble, read from UI, fineTune
+* Notebooks (glue)
+**** Resampling, preprocessing , augmentation --> training data
+**** Json generations for HP tuning and training
+**** HP tuning
+**** Training
+**** Interactive Loop :  Auto Scribble --> UI --> seed collection --> label update ---> fineTune model --> UI -->
+
+
+
