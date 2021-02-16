@@ -249,7 +249,7 @@ def getDimensions(cube_size, labels_to_train_list, groundTruthPresentFlag, data_
             y_gt_size = [1] + cube_size #  ground truth has one channel identifying  label of voxel    
     return DepthRange, RowRange, ColRange, numLabels, X_size, y_size, y_gt_size
 
-def readAndScaleImageData(fileName, folderName, clipFlag, clipLow, clipHigh, scaleLag, scaleFactor,\
+def readAndScaleImageData(fileName, folderName, clipFlag, clipLow, clipHigh, scaleFlag, scaleFactor,\
                           meanSDNormalizeFlag, finalDataType, \
                           isLabelData, labels_to_train_list, verbose=False): 
     returnNow = False
@@ -274,7 +274,7 @@ def readAndScaleImageData(fileName, folderName, clipFlag, clipLow, clipHigh, sca
     if True == clipFlag:
         np.clip(fileData, clipLow, clipHigh, out= fileData)
     #Scale   
-    if True == scaleLag:
+    if True == scaleFlag:
         fileData = fileData / scaleFactor
     #mean SD Normalization
     if True == meanSDNormalizeFlag:
