@@ -298,6 +298,8 @@ def autoGenerateScribbleRegionsAndSeeds3D(gt, pred, bbPad, fractionDivider, dila
             bgScribbleFromBGWrongC: background scribbles from BG region wrongly classified as FG
             fgScribbleFromDefiniteFG: foreground scribbles from definite FG region 
             bgScribbleFromDefiniteBG: BG scribbles from definite BG region
+            fgSeeds: union of foreground scribbles / seeds 
+            bgSeeds: union of background scribbles / seeds
             seedsForGC: seeds for imcut() : 0: unknown, 1 FG, 2: BG
     """   
     #In BB calculation: a : axial, c: corronal, s : sagittal
@@ -349,7 +351,7 @@ def autoGenerateScribbleRegionsAndSeeds3D(gt, pred, bbPad, fractionDivider, dila
     seedsForGC = np.clip(fgSeeds + bgSeeds, 0, 2)    
         
     return binLimit, bbVolume, numFGS, numBGS, fgScribbleFromFGMissed, bgScribbleFromBGWrongC,\
-        fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG, seedsForGC
+        fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG, fgSeeds, bgSeeds, seedsForGC
 
 import imcut.pycut    
 def generateGrahcutSegmentationFromSeeds(gt, predFromNN,
@@ -473,7 +475,7 @@ def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
     dice_org = dice_multi_label(predData, gtData)[0]
     for expId in range(numExperimentsPerPat):
         binLimit, bbVolume, numFGS, numBGS, fgScribbleFromFGMissed, bgScribbleFromBGWrongC,\
-            fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG, seedsForGC \
+            fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG, fgSeeds, bgSeeds, seedsForGC \
             = autoGenerateScribbleRegionsAndSeeds3D(gt=gtData, pred=predData,\
                 bbPad=autoScribbleAndGCConfig['bbPad'],fractionDivider=autoScribbleAndGCConfig['fractionDivider'],\
                 dilation_diam=autoScribbleAndGCConfig['dilation_diam'],\
