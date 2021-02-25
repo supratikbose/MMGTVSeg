@@ -7,7 +7,33 @@ This is a temporary script file.
 import os
 import glob
 import pandas as pd
-import scribbleAndGCHelper
+from scribbleAndGCHelper import createGCInputUsingGT
+
+def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
+                                 patDataConfig, autoScribbleAndGCConfig, 
+                                 numExperimentsPerPat, verbose=False, local=True):
+    from gcHelper import generateGrahcutSegmentationAndDiceFromJson
+    experimentResultDetail = []
+    for expId in range(numExperimentsPerPat):
+        ctData,  ptData, gtData, softmaxData, predFromNN,\
+            binLimit, bbVolume, numFGS, numBGS,\
+            fgScribbleFromFGMissed, bgScribbleFromBGWrongC,\
+            fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG,\
+            fgScribble, bgScribble,\
+            graphCutInputConfig, graphCutInputConfig_JsonFilePath\
+           =  createGCInputUsingGT(patientName=patientName, srcFolder=srcFolder,\
+                expFolder=expFolder, expPatName = "expPat",\
+                patDataConfig=patDataConfig,\
+                autoScribbleAndGCConfig = autoScribbleAndGCConfig,\
+                verbose=verbose)    
+        gcAndDiceResult = generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+        experimentResultDetail.append([gcAndDiceResult["patientName"], gcAndDiceResult["successFlag"],\
+         gcAndDiceResult["numFGS"], gcAndDiceResult["numBGS"],\
+         gcAndDiceResult["originalDice"], gcAndDiceResult["gcDice_softmax"],\
+         gcAndDiceResult["gcDice_ct"], gcAndDiceResult["gcDice_pet"]])
+    # Create the pandas DataFrame 
+    expResult_df = pd.DataFrame(experimentResultDetail, columns = ['patientName', 'successFlag', '#FGScrb', '#BGScrb', 'd_org', ' d_softmax', ' d_ct', ' d_pet'])
+    return expResult_df
 
 
 # ########### Test Code #############        
@@ -65,88 +91,105 @@ autoScribbleAndGCConfig = \
         }     
 }
 
+testCase1 = True
+testCase2 = False
+verbose = False
+local = True
+
+######################### Test code ##########################################
+if True == testCase1:
+    print('Running experiment on individual patient')
+    srcFolder =\
+    '/home/user/DMML/Data/HeadNeck_PET_CT/nnUnet_3dfullres/validation_gtvs_withSoftmax'
+    expFolder = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment'
+    # srcFolder = 'J:/HecktorData/nnUnet_3dfullres/validation_gtvs_withSoftmax'
+    # expFolder = 'J:/PlayDataManualSegmentation/AutoScribbleExperiment'
+    patientName = 'CHUM038'    
+    expResult_df = runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
+        patDataConfig, autoScribbleAndGCConfig,\
+        numExperimentsPerPat=5, verbose, local)
+    print(expResult_df) 
 
     
-########### Test Code #############        
-#Run experiment on a patient
+########### Test Code #############
+if True == testCase2:       
+    print('Running experiment on  patient list')
+    srcFolder =\
+    '/home/user/DMML/Data/HeadNeck_PET_CT/nnUnet_3dfullres/validation_gtvs_withSoftmax'
+    expFolder = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment'
+    # srcFolder = 'J:/HecktorData/nnUnet_3dfullres/validation_gtvs_withSoftmax'
+    # expFolder = 'J:/PlayDataManualSegmentation/AutoScribbleExperiment'
+    numExperimentsPerPat = 100
+    verbose = False
 
-srcFolder =\
- '/home/user/DMML/Data/HeadNeck_PET_CT/nnUnet_3dfullres/validation_gtvs_withSoftmax'
-expFolder = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment'
-# srcFolder = 'J:/HecktorData/nnUnet_3dfullres/validation_gtvs_withSoftmax'
-# expFolder = 'J:/PlayDataManualSegmentation/AutoScribbleExperiment'
-numExperimentsPerPat = 100
-verbose = False
+    medianExpResultList = []
+    listOfPatients = [(os.path.basename(f)).replace('_ct.nii.gz','') \
+        for f in glob.glob(srcFolder + '/*_ct.nii.gz', recursive=False) ]
+    print(listOfPatients)
+    #listOfPatients = ['CHGJ017', 'CHUM038', 'CHGJ008']
+    #patientName = 'CHUM038'
+    for patientName in listOfPatients:
+        print('Experimenting graphCut on ', patientName)
+        expResult_df = runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
+                                        patDataConfig, autoScribbleAndGCConfig, 
+                                        numExperimentsPerPat,  verbose=verbose, local=local)
+        print(expResult_df)
+        numeric_expResult_df = expResult_df[['#FGScrb', '#BGScrb', 'd_org', ' d_softmax', ' d_ct', ' d_pet']]
+        medianExpResultForPatient = numeric_expResult_df.median(axis = 0) 
+        print('Median result of ', numExperimentsPerPat, ' experiment over ', patientName, ' is: ')
+        print(medianExpResultForPatient) 
+        medianExpResultForPatientList = [patientName] + \
+            [medianExpResultForPatient[id] for id in range(len(medianExpResultForPatient))]
+        medianExpResultList.append(medianExpResultForPatientList)
 
-medianExpResultList = []
-listOfPatients = [(os.path.basename(f)).replace('_ct.nii.gz','') \
-      for f in glob.glob(srcFolder + '/*_ct.nii.gz', recursive=False) ]
-print(listOfPatients)
-#listOfPatients = ['CHGJ017', 'CHUM038', 'CHGJ008']
-#patientName = 'CHUM038'
-for patientName in listOfPatients:
-    print('Experimenting graphCut on ', patientName)
-    expResult_df = scribbleAndGCHelper.runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
-                                      patDataConfig, autoScribbleAndGCConfig, 
-                                      numExperimentsPerPat, verbose)
-    print(expResult_df)
-    numeric_expResult_df = expResult_df[['#FGScrb', '#BGScrb', 'd_org', ' d_softmax', ' d_ct', ' d_pet']]
-    medianExpResultForPatient = numeric_expResult_df.median(axis = 0) 
-    print('Median result of ', numExperimentsPerPat, ' experiment over ', patientName, ' is: ')
-    print(medianExpResultForPatient) 
-    medianExpResultForPatientList = [patientName] + \
-        [medianExpResultForPatient[id] for id in range(len(medianExpResultForPatient))]
-    medianExpResultList.append(medianExpResultForPatientList)
+    #Result over patients
+    medianExpResult_df = pd.DataFrame(medianExpResultList,\
+        columns = ['patientName', '#FGScrb', ' #BGScrb', 'd_org', 'd_softmax', 'd_ct', 'd_pet'])
+    # print(medianExpResult_df)
+    # medianExpResult_df.to_csv('/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment/medianExpResult_df.csv', index = False)
 
-#Result over patients
-medianExpResult_df = pd.DataFrame(medianExpResultList,\
-      columns = ['patientName', '#FGScrb', ' #BGScrb', 'd_org', 'd_softmax', 'd_ct', 'd_pet'])
-# print(medianExpResult_df)
-# medianExpResult_df.to_csv('/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment/medianExpResult_df.csv', index = False)
+    margin = 0.1
+    softMaxGCImprovedOverOrg = medianExpResult_df['d_softmax'] > medianExpResult_df['d_org'] + margin
+    softMaxGCWorenedBelowOrg = medianExpResult_df['d_softmax'] < medianExpResult_df['d_org'] - margin
 
-margin = 0.1
-softMaxGCImprovedOverOrg = medianExpResult_df['d_softmax'] > medianExpResult_df['d_org'] + margin
-softMaxGCWorenedBelowOrg = medianExpResult_df['d_softmax'] < medianExpResult_df['d_org'] - margin
+    ctBest =  medianExpResult_df['d_ct'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
+    petBest =  medianExpResult_df['d_pet'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
+    softmaxBest =  medianExpResult_df['d_softmax'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
 
-ctBest =  medianExpResult_df['d_ct'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
-petBest =  medianExpResult_df['d_pet'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
-softmaxBest =  medianExpResult_df['d_softmax'] == medianExpResult_df[['d_softmax', 'd_ct', 'd_pet']].max(axis=1)
+    # ctBest                   = medianExpResult_df['d_ct'] > medianExpResult_df['d_softmax'] and \
+    #                            medianExpResult_df['d_ct'] > medianExpResult_df['d_pet']
+    # petBest                  = medianExpResult_df['d_pet'] > medianExpResult_df['d_softmax'] and \
+    #                            medianExpResult_df['d_pet'] > medianExpResult_df['d_ct']
+    # softmaxBest              = medianExpResult_df['d_softmax'] > medianExpResult_df['d_ct'] and \
+    #                            medianExpResult_df['d_softmax'] > medianExpResult_df['d_pet']
 
-# ctBest                   = medianExpResult_df['d_ct'] > medianExpResult_df['d_softmax'] and \
-#                            medianExpResult_df['d_ct'] > medianExpResult_df['d_pet']
-# petBest                  = medianExpResult_df['d_pet'] > medianExpResult_df['d_softmax'] and \
-#                            medianExpResult_df['d_pet'] > medianExpResult_df['d_ct']
-# softmaxBest              = medianExpResult_df['d_softmax'] > medianExpResult_df['d_ct'] and \
-#                            medianExpResult_df['d_softmax'] > medianExpResult_df['d_pet']
+    # ctGCBetterThanSoftMaxGC = medianExpResult_df['d_ct'] > medianExpResult_df['d_softmax'] + margin
+    # ptGCBetterThanSoftMaxGC = medianExpResult_df['d_pet'] > medianExpResult_df['d_softmax'] + margin
+    # softmaxGCBetterThanCTGC= medianExpResult_df['d_softmax'] > medianExpResult_df['d_ct'] + margin
+    # softmaxGCBetterThanPETGC = medianExpResult_df['d_softmax'] > medianExpResult_df['d_pet'] + margin
 
-# ctGCBetterThanSoftMaxGC = medianExpResult_df['d_ct'] > medianExpResult_df['d_softmax'] + margin
-# ptGCBetterThanSoftMaxGC = medianExpResult_df['d_pet'] > medianExpResult_df['d_softmax'] + margin
-# softmaxGCBetterThanCTGC= medianExpResult_df['d_softmax'] > medianExpResult_df['d_ct'] + margin
-# softmaxGCBetterThanPETGC = medianExpResult_df['d_softmax'] > medianExpResult_df['d_pet'] + margin
+    nP_softMaxGCImprovedOverOrg = len(medianExpResult_df[softMaxGCImprovedOverOrg])
+    nP_softMaxGCWorsenedBelowOrg = len(medianExpResult_df[softMaxGCWorenedBelowOrg])
+    nP_ctBest = len(medianExpResult_df[ctBest])
+    nP_petBest = len(medianExpResult_df[petBest])
+    nP_softmaxBest = len(medianExpResult_df[softmaxBest])
 
-nP_softMaxGCImprovedOverOrg = len(medianExpResult_df[softMaxGCImprovedOverOrg])
-nP_softMaxGCWorsenedBelowOrg = len(medianExpResult_df[softMaxGCWorenedBelowOrg])
-nP_ctBest = len(medianExpResult_df[ctBest])
-nP_petBest = len(medianExpResult_df[petBest])
-nP_softmaxBest = len(medianExpResult_df[softmaxBest])
+    # nP_ctGCBetterThanSoftMaxGC = len(medianExpResult_df[ctGCBetterThanSoftMaxGC])
+    # nP_ptGCBetterThanSoftMaxGC = len(medianExpResult_df[ptGCBetterThanSoftMaxGC])
+    # nP_softmaxGCBetterThanCTGC= len(medianExpResult_df[softmaxGCBetterThanCTGC])
+    # nP_softmaxGCBetterThanPETGC = len(medianExpResult_df[softmaxGCBetterThanPETGC])
 
-# nP_ctGCBetterThanSoftMaxGC = len(medianExpResult_df[ctGCBetterThanSoftMaxGC])
-# nP_ptGCBetterThanSoftMaxGC = len(medianExpResult_df[ptGCBetterThanSoftMaxGC])
-# nP_softmaxGCBetterThanCTGC= len(medianExpResult_df[softmaxGCBetterThanCTGC])
-# nP_softmaxGCBetterThanPETGC = len(medianExpResult_df[softmaxGCBetterThanPETGC])
+    print('numPatients', len(medianExpResult_df))
+    print('Improvement / Worsening margin used ',  margin)
+    print('nP_softMaxGCImprovedOverOrg', nP_softMaxGCImprovedOverOrg)
+    print('nP_softMaxGCWorsenedBelowOrg', nP_softMaxGCWorsenedBelowOrg)
+    print('nP_ctBest', nP_ctBest)
+    print('nP_petBest', nP_petBest)
+    print('nP_softmaxBest', nP_softmaxBest)
 
-print('numPatients', len(medianExpResult_df))
-print('Improvement / Worsening margin used ',  margin)
-print('nP_softMaxGCImprovedOverOrg', nP_softMaxGCImprovedOverOrg)
-print('nP_softMaxGCWorsenedBelowOrg', nP_softMaxGCWorsenedBelowOrg)
-print('nP_ctBest', nP_ctBest)
-print('nP_petBest', nP_petBest)
-print('nP_softmaxBest', nP_softmaxBest)
+    # print('nP_ctGCBetterThanSoftMaxGC', nP_ctGCBetterThanSoftMaxGC)
+    # print('nP_ptGCBetterThanSoftMaxGC', nP_ptGCBetterThanSoftMaxGC)
+    # print('nP_softmaxGCBetterThanCTGC', nP_softmaxGCBetterThanCTGC)
+    # print('nP_softmaxGCBetterThanPETGC', nP_softmaxGCBetterThanPETGC)
 
-# print('nP_ctGCBetterThanSoftMaxGC', nP_ctGCBetterThanSoftMaxGC)
-# print('nP_ptGCBetterThanSoftMaxGC', nP_ptGCBetterThanSoftMaxGC)
-# print('nP_softmaxGCBetterThanCTGC', nP_softmaxGCBetterThanCTGC)
-# print('nP_softmaxGCBetterThanPETGC', nP_softmaxGCBetterThanPETGC)
-
-
-pass
+    pass
