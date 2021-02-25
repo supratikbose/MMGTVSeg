@@ -7,12 +7,12 @@ This is a temporary script file.
 import os
 import glob
 import pandas as pd
-from scribbleAndGCHelper import createGCInputUsingGT
+from scribbleHelper import createGCInputUsingGT
 
 def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
                                  patDataConfig, autoScribbleAndGCConfig, 
                                  numExperimentsPerPat, verbose=False, local=True):
-    from gcHelper import generateGrahcutSegmentationAndDiceFromJson
+    
     experimentResultDetail = []
     for expId in range(numExperimentsPerPat):
         ctData,  ptData, gtData, softmaxData, predFromNN,\
@@ -25,14 +25,20 @@ def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
                 expFolder=expFolder, expPatName = "expPat",\
                 patDataConfig=patDataConfig,\
                 autoScribbleAndGCConfig = autoScribbleAndGCConfig,\
-                verbose=verbose)    
-        gcAndDiceResult = generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+                verbose=verbose)
+        if True == local:
+            from gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
+            gcAndDiceResult = local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+        else:
+            from gcHelper import remote_generateGrahcutSegmentationAndDiceFromJson    
+            gcAndDiceResult = remote_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
         experimentResultDetail.append([gcAndDiceResult["patientName"], gcAndDiceResult["successFlag"],\
          gcAndDiceResult["numFGS"], gcAndDiceResult["numBGS"],\
          gcAndDiceResult["originalDice"], gcAndDiceResult["gcDice_softmax"],\
          gcAndDiceResult["gcDice_ct"], gcAndDiceResult["gcDice_pet"]])
     # Create the pandas DataFrame 
-    expResult_df = pd.DataFrame(experimentResultDetail, columns = ['patientName', 'successFlag', '#FGScrb', '#BGScrb', 'd_org', ' d_softmax', ' d_ct', ' d_pet'])
+    expResult_df = pd.DataFrame(experimentResultDetail,\
+         columns = ['patientName', 'successFlag', '#FGScrb', '#BGScrb', 'd_org', ' d_softmax', ' d_ct', ' d_pet'])
     return expResult_df
 
 
@@ -94,7 +100,7 @@ autoScribbleAndGCConfig = \
 testCase1 = True
 testCase2 = False
 verbose = False
-local = True
+local = False
 
 ######################### Test code ##########################################
 if True == testCase1:
@@ -104,10 +110,11 @@ if True == testCase1:
     expFolder = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment'
     # srcFolder = 'J:/HecktorData/nnUnet_3dfullres/validation_gtvs_withSoftmax'
     # expFolder = 'J:/PlayDataManualSegmentation/AutoScribbleExperiment'
-    patientName = 'CHUM038'    
+    patientName = 'CHUM038'
+    numExperimentsPerPat=5    
     expResult_df = runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
         patDataConfig, autoScribbleAndGCConfig,\
-        numExperimentsPerPat=5, verbose, local)
+        numExperimentsPerPat, verbose, local)
     print(expResult_df) 
 
     

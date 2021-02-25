@@ -1,3 +1,4 @@
+
 import sys
 import selectors
 import json
@@ -91,10 +92,13 @@ class Message:
     def _create_response_json_content(self):
         action = self.request.get("action")
         if action == "imcut":
-            jsonFile = self.request.get("value")
-            print('Running imcut() on ', jsonFile)
-            graphCutResultLocation = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment/expPat_graphCutResult.nii.gz'
-            content = {"graphCutResultLocation": graphCutResultLocation}
+            #graphCutInputConfig_JsonFilePath = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment/graphCutInputConfig.json'
+            graphCutInputConfig_JsonFilePath = self.request.get("value")
+            print('Running imcut() on ', graphCutInputConfig_JsonFilePath)                        
+            from gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
+            gcAndDiceResult = local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+            content = gcAndDiceResult
+            
         # elif action == "search":
         #     query = self.request.get("value")
         #     answer = request_search.get(query) or f'No match for "{query}".'
@@ -216,3 +220,4 @@ class Message:
         message = self._create_message(**response)
         self.response_created = True
         self._send_buffer += message
+

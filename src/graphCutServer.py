@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+#This top line is really important - but why????
+
+########################### Original, working ###################################
+#https://realpython.com/python-sockets/
+#https://github.com/realpython/materials/tree/master/python-sockets-tutorial
 
 import sys
 import socket
@@ -18,11 +23,12 @@ def accept_wrapper(sock):
     sel.register(conn, selectors.EVENT_READ, data=message)
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage:", sys.argv[0], "<host> <port>")
-        sys.exit(1)
-
-    host, port = sys.argv[1], int(sys.argv[2])
+    # if len(sys.argv) != 3:
+    #     print("usage:", sys.argv[0], "<host> <port>")
+    #     sys.exit(1)
+    # host, port = sys.argv[1], int(sys.argv[2])
+    host, port = '127.0.0.1', 65432 
+    print('Starting graphcut server on local host and fixed port: ', port)
     lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     # Avoid bind() exception: OSError: [Errno 48] Address already in use
     lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -55,3 +61,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

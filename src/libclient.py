@@ -1,3 +1,7 @@
+########################### Original, working ###################################
+#https://realpython.com/python-sockets/
+#https://github.com/realpython/materials/tree/master/python-sockets-tutorial
+
 import sys
 import selectors
 import json
@@ -17,6 +21,8 @@ class Message:
         self._jsonheader_len = None
         self.jsonheader = None
         self.response = None
+        self.resultAvailable = False
+        self.result = None
 
     def _set_selector_events_mask(self, mode):
         """Set selector to listen for events: mode is 'r', 'w', or 'rw'."""
@@ -76,16 +82,20 @@ class Message:
             "content-length": len(content_bytes),
         }
         jsonheader_bytes = self._json_encode(jsonheader, "utf-8")
+
         message_hdr = struct.pack(">H", len(jsonheader_bytes))
         message = message_hdr + jsonheader_bytes + content_bytes
         return message
-
+    
+    def getReply(self):
+        return  self.resultAvailable, self.result
+    
     def _process_response_json_content(self):
         content = self.response
-        #result = content.get("result")
-        #print(f"got result: {result}")
-        result = content.get("graphCutResultLocation")
-        print(f"graphCutResultLocation : {result}")
+        successFlag = content.get("successFlag")
+        print(f"graphCut success : {successFlag}")        
+        self.resultAvailable = True
+        self.result = content 
 
     def _process_response_binary_content(self):
         content = self.response
@@ -206,3 +216,5 @@ class Message:
             self._process_response_binary_content()
         # Close when response has been processed
         self.close()
+
+

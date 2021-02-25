@@ -4,7 +4,7 @@ import os
 import numpy as np
 import json
 import nibabel as nib
-from scribbleAndGCHelper import readAndScaleImageData, dice_multi_label
+from scribbleHelper import readAndScaleImageData, dice_multi_label
 
 def generateGrahcutSegmentationFromScribble(predFromNN, binLimit,\
          fgScribble, bgScribble, imgForGC, segparams):
@@ -200,4 +200,13 @@ def generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
         gcAndDiceResult["gcDice_pet"] = 0.0
         gcAndDiceResult["gcDice_softmax"] = 0.0
         
+    return gcAndDiceResult
+
+def local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath):
+    return generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+
+def remote_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath):
+    from graphCutClient import sendImCutRqstAndReceiveResult
+    resultAvailable, gcAndDiceResult = \
+        sendImCutRqstAndReceiveResult(graphCutInputConfig_JsonFilePath)
     return gcAndDiceResult

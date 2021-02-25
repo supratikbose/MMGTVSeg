@@ -114,6 +114,7 @@ def readAndScaleImageData(fileName, folderName, clipFlag, clipLow, clipHigh, sca
             fileData = temp
     return fileData
 
+
 #Understand Bounding box function
 #Rewriting: https://stackoverflow.com/questions/31400769/bounding-box-of-numpy-array
 def bbox2_3D(img, expandBBoxFlag=False, pad=0):
@@ -180,6 +181,128 @@ def getUnionBoundingBoxWithPadding(gt, pred, bbPad):
     s_max = min(s_max+bbPad,  gt.shape[2]-1) 
     return a_min, a_max, c_min, c_max, s_min, s_max
 
+#Choose scribble from misclassified region (2D) : input includes fraction of misclassified pixels 
+# to be added as initial scribble as well as scribble-brush diameter
+def chooseScribbleFromMissedFGOrWrongCBG2D(misclassifiedRegion, listOfSlicesWithGT, fractionDivider, dilation_diam):
+    """
+        misclassifiedRegion : int8 binary volume of fgMissed or bgWrongC with slice as first dimension
+        listOfSlicesWithGT : list of slices where grounf truth is present
+        fractionDivider : positive integer by which number of one pixels in a slice will be divide
+                to decide what fraction of them will be chosen. 
+                If fractionDivider=1, all of them get chosen
+        dilation_diam: dimeter of disk : 1,2,3: disk diameter of  scribble
+    """
+    resultBinary = np.zeros_like(misclassifiedRegion)
+    #numSlices = misclassifiedRegion.shape[0]
+    #for sliceId in range(numSlices):
+    for sliceId in listOfSlicesWithGT:
+        onePixelsThisSlice = np.where(misclassifiedRegion[sliceId,...]==1)    
+        onePixelCoordsThisSlice = list(zip(onePixelsThisSlice[0], onePixelsThisSlice[1]))
+        #print(missedFGResultCoordsThisSlice)
+        numOnePixelCoordsThisSlice = len(onePixelCoordsThisSlice)
+        #Debug:
+        #print('Slice: ', sliceId, 'numOnePixelhisSlice ', numOnePixelCoordsThisSlice)
+        numScribblesFromThisSlice = numOnePixelCoordsThisSlice // fractionDivider
+        chosenScribbleCoordsThisSlice = random.sample(onePixelCoordsThisSlice, numScribblesFromThisSlice)
+        #Convert chose coords  in 3D
+        chosenScribbleCoordsThisSlice = \
+          [ tuple([sliceId] + list(tupleElem)) for  tupleElem in chosenScribbleCoordsThisSlice]
+        #print(chosenFGScribbleFromMissedFGCoordsThisSlice)
+        for coord in chosenScribbleCoordsThisSlice : resultBinary[coord] = 1 
+        #dialate in slice        
+        resultSlice = resultBinary[sliceId,...]
+        #print('result before dilation ')
+        #print(resultSlice)
+        resultSlice = \
+           scipy.ndimage.binary_dilation(resultSlice,structure=disk(dilation_diam)).astype(resultSlice.dtype)
+        #print('result after dilation ')
+        #print(resultSlice)
+        #But make sure it does not go beyond original binary
+        resultSlice = resultSlice * misclassifiedRegion[sliceId,...]
+        #print('result after clipping ')
+        #print(resultSlice)
+        resultBinary[sliceId,...] = resultSlice
+    #Debug
+    #print('Debug: numScrVoxelsFromMissed-2D: ', np.sum(resultBinary))
+    return resultBinary
+
+#Method to choose ring shaped scribble in definitely correctly idenified region (2D)
+def chooseScribbleFromDefiniteRegion2D(definiteRegion,  listOfSlicesWithGT,  dilation_diam, \
+        stayCloseToGT, gt, dia_close):
+    """
+        definiteRegion : int8 binary volume of definiteRegion with slice as first dimension 
+        listOfSlicesWithGT : list of slices where grounf truth is present        
+        dilation_diam: dimeter of disk : 2, 3, 4 : a diam x diam window is placed to choose scribble
+        stayCloseToGT: flag to indicate to generate mask, esp bgScribbleFromDefiniteBG close to GT
+        gt: ground truth
+        dia_close : how close to GT; should be larger than dilation_diam
+    """
+    resultBinary = np.zeros_like(definiteRegion)
+    #numSlices = misclassifiedRegion.shape[0]
+    #for sliceId in range(numSlices):
+    for sliceId in listOfSlicesWithGT:
+        definiteSlice = definiteRegion[sliceId,...]
+        erodedSlice = \
+          scipy.ndimage.binary_erosion(definiteSlice,structure=disk(dilation_diam)).astype(definiteSlice.dtype)
+        scribbleSlice = definiteSlice - erodedSlice
+        if True ==stayCloseToGT:
+            gtSlice = gt[sliceId,...]
+            expandedGTSlice = \
+              scipy.ndimage.binary_dilation(gtSlice,structure=disk(dia_close)).astype(gtSlice.dtype)
+            #Modify scribbleSlice to stay close to GT
+            scribbleSlice = scribbleSlice * expandedGTSlice
+        #print('result after subtraction of erosion ')
+        #print(scribbleSlice)
+        resultBinary[sliceId,...] = scribbleSlice
+    #Debug
+    #print('Debug: numScrVoxelsFromDefinite-2D: ', np.sum(resultBinary))
+    return resultBinary
+
+   #function to generate  different scribble regions automatically
+def autoGenerateScribbleRegions2D(gt, pred, fractionDivider, dilation_diam):
+    """
+        gt : int8 binary volume of ground truth  with slice as first dimension 
+        pred : int8 binary volume of prediction  with slice as first dimension
+        fractionDivider : positive integer by which number of one pixels in a slice will be divide
+                to decide what fraction of them will be chosen. 
+                If fractionDivider=1, all of them get chosen
+        dilation_diam: dimeter of disk : 2, 3, 4 : a diam x diam window is placed to choose scribble
+    """    
+    #https://stackoverflow.com/questions/4260280/if-else-in-a-list-comprehension
+    listOfSlicesWithGT = [sliceId for sliceId in range(gt.shape[0]) if np.sum(gt[sliceId,...]) >0]
+    #print(listOfSlicesWithGT)
+
+    gt_comp = 1-gt 
+    pred_comp = 1-pred
+    gtMinusPred = gt * pred_comp 
+    predMinusGt = pred * gt_comp
+
+    definiteBG = gt_comp # This is also definite background
+    definiteFG = gt * pred #This is definite FG
+    fgMissed = gtMinusPred  #  FG missed by classified
+    bgWrongC = predMinusGt #  BG wrongly classified as FG
+
+
+    fgScribbleFromFGMissed = chooseScribbleFromMissedFGOrWrongCBG2D(misclassifiedRegion=fgMissed, \
+      listOfSlicesWithGT=listOfSlicesWithGT, fractionDivider=fractionDivider,\
+      dilation_diam=dilation_diam)
+
+    bgScribbleFromBGWrongC = chooseScribbleFromMissedFGOrWrongCBG2D(misclassifiedRegion=bgWrongC, \
+      listOfSlicesWithGT=listOfSlicesWithGT, fractionDivider=fractionDivider,\
+      dilation_diam=dilation_diam)
+
+    fgScribbleFromDefiniteFG = chooseScribbleFromDefiniteRegion2D(definiteRegion=definiteFG,\
+       listOfSlicesWithGT=listOfSlicesWithGT, dilation_diam=dilation_diam, \
+      stayCloseToGT=False, gt=gt, dia_close=dilation_diam+5)
+    #Use stayCloseToGT: True  to choose bgScribbleFromDefiniteBG close to GT 
+    #and not on outer boundary of image; 
+    #dia_close : how close to GT; should be larger than dilation_diam
+    bgScribbleFromDefiniteBG = chooseScribbleFromDefiniteRegion2D(definiteRegion=definiteBG,\
+       listOfSlicesWithGT=listOfSlicesWithGT, dilation_diam=dilation_diam, \
+      stayCloseToGT=True, gt=gt, dia_close=dilation_diam+5)
+    
+    return listOfSlicesWithGT, fgScribbleFromFGMissed, bgScribbleFromBGWrongC,\
+        fgScribbleFromDefiniteFG, bgScribbleFromDefiniteBG 
 
 
 #Choose scribble from misclassified region (3D) : input includes fraction of misclassified pixels 
