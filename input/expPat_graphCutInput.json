@@ -1,50 +1,57 @@
 {
-"srcFolder": "/home/user/DMML/Data/HeadNeck_PET_CT/nnUnet_3dfullres/validation_gtvs_withSoftmax",
-"patDataConfig": 
-   	{
-       	"expFolder": "/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment",
-   		"expPatName": "expPat",   
-   		"ctSuffix": "_ct.nii.gz",
-   		"ptSuffix": "_pt.nii.gz",
-   		"gtSuffix": "_ct_gtvt.nii.gz",
-   		"predSuffix": "_segment.nii.gz",
-   		"softmaxSuffix": "_softMax.nii.gz",
-   		"fgSeedsSuffix": "_fgSeeds.nii.gz",
-   		"bgSeedsSuffix": "_bgSeeds.nii.gz",
-   		"gCutSuffix": "_gCut.nii.gz",   
-   		"ct_low": -1000,
-   		"ct_high": 3095,
-   		"ct_clipImages": false,
-   		"ct_scaleImages": false,
-   		"ct_scaleFactor": 1000,
-   		"ct_normalizeImages": false,
-   		"pt_low": -1000,
-   		"pt_high": 3095,
-   		"pt_clipImages": false,
-   		"pt_scaleImages": false,
-   		"pt_scaleFactor": 1,
-   		"pt_normalizeImages": false,
-   		"labels_to_train": [1]
-   	},
-"autoScribbleAndGCConfig":
+	"patientName": "CHUM038", 
+	"srcFolder": "J:/HecktorData/nnUnet_3dfullres/validation_gtvs_withSoftmax", 
+	"expFolder": "J:/PlayDataManualSegmentation/AutoScribbleExperiment", 
+	"expPatName": "expPat", 
+	"binLimit": [61, 118, 49, 97, 76, 105], 
+	"numFGS": 6, 
+	"numBGS": 6, 
+	"patDataConfig": 
+		{
+			"ctSuffix": "_ct.nii.gz", 
+			"ptSuffix": "_pt.nii.gz", 
+			"gtSuffix": "_ct_gtvt.nii.gz", 
+			"predSuffix": "_segment.nii.gz", 
+			"softmaxSuffix": "_softMax.nii.gz", 
+			"fgScribbleSuffix": "_fgScribble.nii.gz", 
+			"bgScribbleSuffix": "_bgScribble.nii.gz", 
+			"ct_gCutSuffix": "_ct_gCut.nii.gz", 
+			"pet_gCutSuffix": "_pet_gCut.nii.gz", 
+			"softmax_gCutSuffix": "_softmax_gCut.nii.gz", 
+			"ct_low": -1000, 
+			"ct_high": 3095, 
+			"ct_clipImages": false, 
+			"ct_scaleImages": false, 
+			"ct_scaleFactor": 1000, 
+			"ct_normalizeImages": false, 
+			"pt_low": -1000, 
+			"pt_high": 3095, 
+			"pt_clipImages": false, 
+			"pt_scaleImages": false, 
+			"pt_scaleFactor": 1, 
+			"pt_normalizeImages": false, 
+			"labels_to_train": [1]
+		}, 
+	"autoScribbleAndGCConfig": 
 	{
-      	 "bbPad": 2,
-      	 "fractionDivider": 10,
-      	 "dilation_diam": 2,
-      	 "useAtmostNScribblesPerRegion": 3,
-    	 "segparams_ssgc": 
-        	 {
-        	  "method": "graphcut",
-        	  "pairwise_alpha": 1.0,
-        	  "modelparams": 
-        	   {
-        	    "cvtype": "full",
-        	    "params": {
-        		       "covariance_type": "full", 
-        		       "n_components": 1
-        		      }
-        	   },
-        	   "return_only_object_with_seeds": true
-        	 }
+		"bbPad": 2, 
+		"fractionDivider": 10, 
+		"dilation_diam": 2, 
+		"useAtmostNScribblesPerRegion": 3, 
+		"segparams_ssgc": 
+			{
+				"method": "graphcut", 
+				"pairwise_alpha": 1.0, 
+				"modelparams": 
+					{
+						"cvtype": "full", 
+						"params": 
+							{
+								"covariance_type": "full", 
+								"n_components": 1
+							}
+					}, 
+				"return_only_object_with_seeds": true
+			}
 	}
 }
