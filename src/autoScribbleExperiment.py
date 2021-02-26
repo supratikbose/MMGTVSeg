@@ -5,9 +5,15 @@ Spyder Editor
 This is a temporary script file.
 """
 import os
+import sys
 import glob
 import pandas as pd
-from scribbleHelper import createGCInputUsingGT
+
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+#from src import scribbleHelper
+#import src.gcHelper as gcHelper
+from src.scribbleHelper import createGCInputUsingGT
 
 def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
                                  patDataConfig, autoScribbleAndGCConfig, 
@@ -27,10 +33,10 @@ def runAutoGCExperimentOnPatient(patientName, srcFolder, expFolder,\
                 autoScribbleAndGCConfig = autoScribbleAndGCConfig,\
                 verbose=verbose)
         if True == local:
-            from gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
+            from src.gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
             gcAndDiceResult = local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
         else:
-            from gcHelper import remote_generateGrahcutSegmentationAndDiceFromJson    
+            from src.gcHelper import remote_generateGrahcutSegmentationAndDiceFromJson    
             gcAndDiceResult = remote_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
         experimentResultDetail.append([gcAndDiceResult["patientName"], gcAndDiceResult["successFlag"],\
          gcAndDiceResult["numFGS"], gcAndDiceResult["numBGS"],\

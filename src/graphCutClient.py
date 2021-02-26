@@ -10,7 +10,10 @@ import socket
 import selectors
 import traceback
 
-import libclient
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src import libclient
+#import libclient
 
 #Moving it inside sendImCutRqstAndReceiveResult so that it gets called
 # every time  else it was getting closed due to sel.close()

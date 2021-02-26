@@ -9,8 +9,10 @@ import sys
 import socket
 import selectors
 import traceback
-
-import libserver
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+from src import libserver
+#import libserver
 
 sel = selectors.DefaultSelector()
 

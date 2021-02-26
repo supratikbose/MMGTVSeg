@@ -5,6 +5,9 @@ import json
 import io
 import struct
 
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+
 # request_search = {
 #     "morpheus": "Follow the white rabbit. \U0001f430",
 #     "ring": "In the caves beneath the Misty Mountains. \U0001f48d",
@@ -95,8 +98,10 @@ class Message:
             #graphCutInputConfig_JsonFilePath = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment/graphCutInputConfig.json'
             graphCutInputConfig_JsonFilePath = self.request.get("value")
             print('Running imcut() on ', graphCutInputConfig_JsonFilePath)                        
-            from gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
+            from src.gcHelper import local_generateGrahcutSegmentationAndDiceFromJson    
             gcAndDiceResult = local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
+            #from src.gcHelper import generateGrahcutSegmentationAndDiceFromJson    
+            #gcAndDiceResult = generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
             content = gcAndDiceResult
             
         # elif action == "search":

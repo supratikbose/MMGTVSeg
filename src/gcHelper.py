@@ -1,10 +1,16 @@
 #GraphCut Heleper
 
 import os
+import sys
 import numpy as np
 import json
 import nibabel as nib
-from scribbleHelper import readAndScaleImageData, dice_multi_label
+
+sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+import src
+#from src import scribbleHelper
+from src.scribbleHelper import readAndScaleImageData, dice_multi_label
+from src.graphCutClient import sendImCutRqstAndReceiveResult
 
 def generateGrahcutSegmentationFromScribble(predFromNN, binLimit,\
          fgScribble, bgScribble, imgForGC, segparams):
@@ -206,7 +212,9 @@ def local_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFil
     return generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath)
 
 def remote_generateGrahcutSegmentationAndDiceFromJson(graphCutInputConfig_JsonFilePath):
-    from graphCutClient import sendImCutRqstAndReceiveResult
+    from src import graphCutClient
+    from src.graphCutClient import sendImCutRqstAndReceiveResult    
+    #from graphCutClient import sendImCutRqstAndReceiveResult
     resultAvailable, gcAndDiceResult = \
         sendImCutRqstAndReceiveResult(graphCutInputConfig_JsonFilePath)
     return gcAndDiceResult

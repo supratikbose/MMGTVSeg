@@ -6,7 +6,6 @@ Helper Methods for scribble and graph cut
 """
 
 import os
-
 import sys
 import shutil
 import json
@@ -20,7 +19,6 @@ from scipy.ndimage import morphology
 import SimpleITK
 import pandas as pd
 
-import imcut.pycut
 
 #Method to create 2D-disk and 3D ball to be used for fat scribble
 def disk(n):
