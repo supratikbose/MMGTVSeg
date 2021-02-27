@@ -4,12 +4,15 @@
 ########################### Original, working ###################################
 #https://realpython.com/python-sockets/
 #https://github.com/realpython/materials/tree/master/python-sockets-tutorial
-
+import os
 import sys
 import socket
 import selectors
 import traceback
-sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+#sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+parentDirectory = os.path.join(currentDirectory, "..")
+sys.path.append(parentDirectory)
 import src
 from src import libserver
 #import libserver

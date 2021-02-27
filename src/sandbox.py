@@ -738,13 +738,13 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
 # plt.plot([1, 2, 3, 4])
 # plt.ylabel('some numbers')
 # plt.show()
-
+###############################################################
 #Test code
-import sys
-sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
-import src
-from src import  DSSENet
-from DSSENet import DSSE_VNet
+# import sys
+# sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+# import src
+# from src import  DSSENet
+# from DSSENet import DSSE_VNet
 
 # import pprint
 # pprint.pprint(sys.path)
@@ -791,14 +791,19 @@ from DSSENet import DSSE_VNet
 # patientNameList = [f.split('/')[-2] for f in glob.glob(input_folder + '/**/*_ct' + extension, recursive=True)]
 # pass
 
-############ Prior to submission CHUV001_ct_gtvt.nii.gz should be changed to CHUV001.nii.gz#################
-patientFolder = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_test/segmentation_output_tosubmit'
-pattern1 = '_ct_gtvt.nii.gz'
-pattern2 = '.nii.gz'
-patientList = [(os.path.basename(f)).replace(pattern1,'') \
-      for f in glob.glob(patientFolder + '/*_ct_gtvt.nii.gz', recursive=False) ]
-pass
-for f in patientList:
-    old_file = os.path.join(patientFolder, f + pattern1)
-    new_file = os.path.join(patientFolder, f + pattern2)
-    os.rename(old_file, new_file)
+# ############ Prior to submission CHUV001_ct_gtvt.nii.gz should be changed to CHUV001.nii.gz#################
+# patientFolder = '/home/user/DMML/CodeAndRepositories/MMGTVSeg/data/hecktor_test/segmentation_output_tosubmit'
+# pattern1 = '_ct_gtvt.nii.gz'
+# pattern2 = '.nii.gz'
+# patientList = [(os.path.basename(f)).replace(pattern1,'') \
+#       for f in glob.glob(patientFolder + '/*_ct_gtvt.nii.gz', recursive=False) ]
+# pass
+# for f in patientList:
+#     old_file = os.path.join(patientFolder, f + pattern1)
+#     new_file = os.path.join(patientFolder, f + pattern2)
+#     os.rename(old_file, new_file)
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+parentDirectory = os.path.join(currentDirectory, "..")
+sys.path.append(parentDirectory)
+print('1: ', currentDirectory)
+print('2: ', parentDirectory)

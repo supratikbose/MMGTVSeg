@@ -1,11 +1,14 @@
-
+import os
 import sys
 import selectors
 import json
 import io
 import struct
 
-sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+#sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+parentDirectory = os.path.join(currentDirectory, "..")
+sys.path.append(parentDirectory)
 import src
 
 # request_search = {

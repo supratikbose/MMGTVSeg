@@ -9,7 +9,10 @@ import sys
 import glob
 import pandas as pd
 
-sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+#sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+parentDirectory = os.path.join(currentDirectory, "..")
+sys.path.append(parentDirectory)
 import src
 #from src import scribbleHelper
 #import src.gcHelper as gcHelper

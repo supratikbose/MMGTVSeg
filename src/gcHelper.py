@@ -6,7 +6,10 @@ import numpy as np
 import json
 import nibabel as nib
 
-sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+#sys.path.append('/home/user/DMML/CodeAndRepositories/MMGTVSeg')
+currentDirectory = os.path.dirname(os.path.abspath(__file__))
+parentDirectory = os.path.join(currentDirectory, "..")
+sys.path.append(parentDirectory)
 import src
 #from src import scribbleHelper
 from src.scribbleHelper import readAndScaleImageData, dice_multi_label
