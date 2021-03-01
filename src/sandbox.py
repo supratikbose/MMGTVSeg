@@ -802,8 +802,78 @@ def generateNFoldCVnput(trainConfigFilePath, numCVFold=5, verbose=False):
 #     old_file = os.path.join(patientFolder, f + pattern1)
 #     new_file = os.path.join(patientFolder, f + pattern2)
 #     os.rename(old_file, new_file)
-currentDirectory = os.path.dirname(os.path.abspath(__file__))
-parentDirectory = os.path.join(currentDirectory, "..")
-sys.path.append(parentDirectory)
-print('1: ', currentDirectory)
-print('2: ', parentDirectory)
+
+# currentDirectory = os.path.dirname(os.path.abspath(__file__))
+# parentDirectory = os.path.join(currentDirectory, "..")
+# sys.path.append(parentDirectory)
+# print('1: ', currentDirectory)
+# print('2: ', parentDirectory)
+
+from PyQt5 import QtWidgets as qt
+
+class Dialog(qt.QDialog):
+    """Dialog."""
+    def __init__(self, srcFolder, expFolder, parent=None):
+        """Initializer."""
+        super().__init__(parent)
+        self.srcFolder = srcFolder
+        self.expFolder = expFolder
+        self.PatientName = ''
+        self.setWindowTitle('Fine tune GTVSegmentation dialog')
+        #Components:        
+        dlgLayout = qt.QVBoxLayout()
+        #Labels
+        dlgLayout.addWidget(qt.QLabel('<h3>' + 'srcDir: ' + os.path.basename(srcFolder)+ '</h3>'))
+        dlgLayout.addWidget(qt.QLabel('<h3>' + 'expDir: ' + os.path.basename(expFolder)+ '</h3>'))
+        #Instruction_1
+        self.Instruction_1 = qt.QLabel('<h3>Choose a patient from srcDir</h3>')
+        dlgLayout.addWidget(self.Instruction_1)  
+        #Patient form
+        self.PatientFormLayout = qt.QFormLayout()
+        self.PatientEntry = 'Patient (e.g. CHGJ038):'
+        self.PatientEntryWidget = qt.QLineEdit()
+        self.PatientFormLayout.addRow(self.PatientEntry, self.PatientEntryWidget)
+        dlgLayout.addLayout(self.PatientFormLayout)
+        #Load button 
+        self.LoadButton = qt.QPushButton('Load Patient')
+        dlgLayout.addWidget(self.LoadButton )
+        #Instruction_2 #'<h3>View segmentaion and add / modify scribble</h3>'
+        self.Instruction_2 = qt.QLabel('')
+        dlgLayout.addWidget(self.Instruction_2)
+        #Update button
+        self.UpdateButton = qt.QPushButton('Save Scribble and Update Segmentation')
+        dlgLayout.addWidget(self.UpdateButton)
+        #Instruction_3 #'<h3>If satisfied, unload patient</h3>'
+        self.Instruction_3 = qt.QLabel('')
+        dlgLayout.addWidget(self.Instruction_3)
+        #Unload button        
+        self.UnloadButton = qt.QPushButton('UnloadPatient')
+        dlgLayout.addWidget(self.UnloadButton)
+        #
+        self.dlgLayout = dlgLayout
+        self.setLayout(self.dlgLayout)
+        
+        #Set up handlers : Connection syntax:
+        #widget.signal.connect(slot_function)
+        self.LoadButton.clicked.connect(self.loadButtonHandler)
+        
+    def loadButtonHandler(self):        
+        #https://stackoverflow.com/questions/57171474/get-text-from-a-qlineedit-in-a-qformlayout-using-itemat
+        #i, j = layout.getWidgetPosition(entry1)
+        #widget_item = layout.itemAt(i, j+1)
+        #widget = widget_item.widget()
+        #text = widget.text()
+        #print(text)
+        #Read patient name from patient entry form
+        #self.PatientName = self.PatientEntryWidget.text()
+        print(self.PatientEntryWidget.text())
+#         print(self.PatientName)
+#         self.Instruction_2.setText('<h3>' + self.PatientName +\
+#                 ' loaded. View segmentaion and add / modify scribble.</h3>')
+        
+app = qt.QApplication(sys.argv)       
+srcFolder =\
+'/home/user/DMML/Data/HeadNeck_PET_CT/nnUnet_3dfullres/validation_gtvs_withSoftmax'
+expFolder = '/home/user/DMML/Data/PlayDataManualSegmentation/AutoScribbleExperiment' 
+dlg = Dialog(srcFolder, expFolder)
+dlg.show()
