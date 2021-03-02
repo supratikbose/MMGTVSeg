@@ -37,19 +37,21 @@ Implementation TODO
 **** Training
 **** Interactive Loop :  Auto Scribble --> UI --> seed collection --> label update ---> fineTune model --> UI -->
 
-14-20 Feb:  
+Plan : 14-20 Feb: 
     2Day: Auto scribble,Imcut input, imcut result, 
     4Day: Jupyter notebook hosting slicer, list over patents, load each.patient, generate scribbles, display scribble, allow user to change scribble, trigger graphcut, display result, iterate, accept result, next patient 
-
 21- 27 Feb:
     3Day: Rewrite code to allow HP tuning using raytune and allow ensembling during HP tuning; Refactor existing code and folders
     3Day:  run training, perfect graphcut
-
 28Feb-6Mar: 
     6Day: Code for fine tune loop
-
 7Mar-9Mar: 
     3Day: Prepare presentation
+
+Actual: 14Feb to 2nd Mar:
+- scribble prototype completed
+- presentation completed
+ 
 
 
 
